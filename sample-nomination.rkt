@@ -2,7 +2,6 @@
 
 (require
   "fba.rkt"
-  (only-in racket count set-union set->list for/set in-set argmax set-count remove-duplicates empty? set-empty?)
   (submod "fba.rkt" test))
 
 (define (assign-random-vals fbas)
@@ -15,17 +14,14 @@
   (define P
     (assign-random-vals fbas))
   (define s
-    (nomination fbas N P))
-  (define agreement?
-    (and
-      (equal?
-        (length (remove-duplicates (hash-values s)))
-        1)
-      (not (member -1 (hash-values s)))))
-  agreement?)
+    (nomination-votes fbas N P))
+  (define accepted?
+    (accepted-nominated? fbas s))
+  accepted?)
 
 (define (my-sampler fbas)
   (rejection-sampler
     (run-nomination fbas)))
 
-(sampler->discrete-dist (my-sampler fbas-1) 100)
+(define (sample num-samples)
+  (sampler->discrete-dist (my-sampler fbas-1) num-samples))
