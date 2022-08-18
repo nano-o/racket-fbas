@@ -23,5 +23,8 @@
   (rejection-sampler
     (run-nomination fbas)))
 
-(define (sample num-samples)
-  (sampler->discrete-dist (my-sampler fbas-1) num-samples))
+(define (get-distribution num-samples fbas)
+  (sampler->discrete-dist (my-sampler fbas) num-samples))
+
+; TODO generate more complex intact fbas
+; TODO try the current top-tier configuration
