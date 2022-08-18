@@ -1,4 +1,4 @@
-#lang racket
+#lang errortrace racket
 
 (provide
   quorum?
@@ -13,24 +13,37 @@
 ; an FBAS is a map from nodes to sets of slices
 ; TODO: check there are no duplicate slices, at least one slice, etc.?
 (define fbas/c
-  (hash/c number? (*list/c (*list/c number?))))
+  (and
+    immutable?
+    (hash/c number? (*list/c (*list/c number?)))))
 
 (module+ test
   (require rackunit)
   (provide (all-defined-out))
 
-  (define 3-out-of-4
-    (combinations '(1 2 3 4) 3))
-
-  (define/contract fbas-1
+  (define (threshold-fbas t n)
     fbas/c
-    (make-immutable-hash (zip '(1 2 3 4) (make-list 4 3-out-of-4))))
+    (define nodes
+      (range 1 (add1 n)))
+    (define slices
+      (combinations nodes t))
+    (make-immutable-hash (zip nodes (make-list n slices))))
+
+  (define fbas-1
+    (threshold-fbas 3 4))
 
   (define/contract fbas-2
     fbas/c
     (let ([slices
             (combinations '(1 2 3) 2)])
-      (hash-set fbas-1 1 slices))))
+      (hash-set fbas-1 1 slices)))
+
+  (define fbas-3
+    (let ([slices-1
+            (combinations '(1 2 3) 2)]
+          [slices-2
+            (combinations '(3 4 5) 2)])
+      (hash-set (hash-set (threshold-fbas 4 5) 1 slices-1) 5 slices-2))))
 
 (define/contract (has-slice-in? fbas p Q)
   (-> fbas/c number? list? boolean?)
@@ -58,6 +71,8 @@
     (check-true (quorum-of? fbas-1 1 (list 2 3 4)))
     (check-false (quorum-of? fbas-1 1 (list 1 2)))))
 
+; TODO check whether the system is a topen
+
 (define/contract (weight fbas p q)
   (-> fbas/c number? number? number?)
   (define slices
@@ -79,6 +94,8 @@
       (weight fbas-2 1 4) 0)
     (check-equal?
       (weight fbas-1 1 1) (/ 3 4))))
+
+; TODO add quorum sets and conversion to fbas
 
 ; nomination protocol
 
