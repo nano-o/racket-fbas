@@ -1,9 +1,11 @@
 #lang racket
 
 (provide
+  quorum?
   quorum-of?
   weight
-  nomination)
+  nomination-votes
+  accepted-nominated?)
 
 (define (zip l1 l2)
   (map cons l1 l2))
@@ -37,12 +39,16 @@
   (for/or ([s slices])
     (subset? s Q)))
 
+(define (quorum? fbas Q)
+  (-> fbas/c list? boolean?)
+    (for/and ([q Q])
+      (has-slice-in? fbas q Q)))
+
 (define (quorum-of? fbas p Q)
   (-> fbas/c number? list? boolean?)
   (and
     (has-slice-in? fbas p Q)
-    (for/and ([q Q])
-      (has-slice-in? fbas q Q))))
+    (quorum? fbas Q)))
 
 (module+ test
   (test-case
@@ -147,12 +153,35 @@
         (fixpoint-f fv))))
   fixpoint-f)
 
-(define (nomination fbas N P)
+(define (nomination-votes fbas N P)
   ((until-fixpoint (λ (t) (nomination-step fbas N P t))) (s-0 fbas)))
 
 (module+ test
   (test-case
     "nomination"
     (check-equal?
-      (nomination fbas-1 N-1 P-1)
+      (nomination-votes fbas-1 N-1 P-1)
       (make-immutable-hash (zip (hash-keys fbas-1) (make-list 4 4))))))
+
+; check whether a value has been accepted as nominated
+(define/contract (accepted-nominated? fbas s)
+  (-> fbas/c hash? boolean?)
+  (define (voted-for v)
+    (for/list
+      ([(n w) (in-hash s)]
+       #:when (equal? v w))
+      n))
+  (for/or ([(n v) (in-hash s)])
+    (and
+      (not (equal? v -1))
+      (quorum? fbas (voted-for v)))))
+
+(module+ test
+  (test-case
+    "accepted-nominated?"
+    (check-false
+      (accepted-nominated? fbas-1 (nomination-step fbas-1 N-1 P-1 (s-0 fbas-1))))
+    (check-true
+      (accepted-nominated? fbas-1 (nomination-votes fbas-1 N-1 P-1)))))
+
+; TODO multiple rounds of nomination
