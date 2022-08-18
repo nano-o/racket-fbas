@@ -2,7 +2,8 @@
 
 (provide
   quorum-of?
-  weight)
+  weight
+  nomination)
 
 (define (zip l1 l2)
   (map cons l1 l2))
@@ -124,6 +125,7 @@
     (cond
       [(not (equal? v -1)) (values n v)]
       [(equal? (leader fbas N P n) n) (values n n)]
+      [(equal? (leader fbas N P n) -1) (values n -1)]
       [else (values n (hash-ref s (leader fbas N P n)))])))
 
 (define (s-0 fbas)
@@ -145,12 +147,12 @@
         (fixpoint-f fv))))
   fixpoint-f)
 
-(define (nomination fbas N P s)
-  ((until-fixpoint (λ (t) (nomination-step fbas N P t))) s))
+(define (nomination fbas N P)
+  ((until-fixpoint (λ (t) (nomination-step fbas N P t))) (s-0 fbas)))
 
 (module+ test
   (test-case
     "nomination"
     (check-equal?
-      (nomination fbas-1 N-1 P-1 (s-0 fbas-1))
+      (nomination fbas-1 N-1 P-1)
       (make-immutable-hash (zip (hash-keys fbas-1) (make-list 4 4))))))
