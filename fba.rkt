@@ -1,4 +1,4 @@
-#lang errortrace racket
+#lang racket
 
 (provide
   quorum?
@@ -188,7 +188,7 @@
       ([(n w) (in-hash s)]
        #:when (equal? v w))
       n))
-  (for/or ([(n v) (in-hash s)])
+  (for/or ([v (hash-values s)])
     (and
       (not (equal? v -1))
       (quorum? fbas (voted-for v)))))
