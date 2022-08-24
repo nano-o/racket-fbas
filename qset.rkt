@@ -18,11 +18,11 @@
     [qset-member? (-> qset? node/c boolean?)]
     [qset-members (-> qset? set?)]
     [weight (-> qset? node/c number?)]
-    [quorum? (-> qset? node/c boolean?)]))
+    [sat? (-> qset? set? boolean?)]))
 
 ; a node is something for which eqv? is semantic equivalence, i.e. interned symbols, numbers, and characters.
 (define node/c
-  (or/c (and/c symbol? symbol-interned?) number? char?))
+  (or/c boolean? (and/c symbol? symbol-interned?) number? char?))
 
 ; A quorum-set represents sets of sets of nodes using thresholds
 ; This is what is used on the wire in the Stellar network
@@ -199,7 +199,8 @@
     ; NOTE the two computations do not agree here:
     (check-false (equal? (weight qset-6 'A) (whitepaper-weight qset-6 'A)))))
 
-(define (quorum? qset q)
+; whether q satisfies the requirements of the qset
+(define (sat? qset q)
   (define t
     (for/fold
       ([n 0])
@@ -207,7 +208,7 @@
       (cond
         [(and (node/c e) (set-member? q e))
          (+ n 1)]
-        [(and (qset? e) (quorum? e q))
+        [(and (qset? e) (sat? e q))
          (+ n 1)]
         [else n])))
   (>= t (qset-threshold qset)))
@@ -215,8 +216,8 @@
 (module+ test
   (test-case
     "quorum?"
-    (check-true (quorum? qset-1 (set 1 2)))
-    (check-false (quorum? qset-1 (set 1)))
-    (check-true (quorum? qset-5 (set 1 2 'x 'z)))
-    (check-true (quorum? qset-6 (set 'A 'x 'z)))
-    (check-false (quorum? qset-6 (set 'A 'a 'y)))))
+    (check-true (sat? qset-1 (set 1 2)))
+    (check-false (sat? qset-1 (set 1)))
+    (check-true (sat? qset-5 (set 1 2 'x 'z)))
+    (check-true (sat? qset-6 (set 'A 'x 'z)))
+    (check-false (sat? qset-6 (set 'A 'a 'y)))))
