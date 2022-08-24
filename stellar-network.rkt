@@ -2,7 +2,11 @@
 
 (require
   json
-  net/url)
+  net/url
+  (only-in "qset.rkt" qset qset-kw qset-validators qset-threshold qset-inner-qsets))
+(provide
+  get-stellar-top-tier-qsets
+  hash->conf)
 
 (define/contract (network-info url-string)
   (-> string? hash?)
@@ -33,7 +37,7 @@
 ;(define (top-tier-nodes info top-tier-org-names)
   ;(hash-ref response 'nodes))
 
-(define (stellar-top-tier-quorumSets)
+(define (get-stellar-top-tier-qsets)
   (define stellarbeat-url-string
     "https://api.stellarbeat.io/v1")
   (define current-top-tier-org-names
@@ -44,3 +48,14 @@
     (top-tier-nodes info current-top-tier-org-names))
   (for/hash ([n current-top-tier-nodes])
     (values n (hash-ref (quorum-sets info) n))))
+
+(define (hash->qset h)
+  (qset-kw
+    #:threshold (hash-ref h 'threshold)
+    #:validators (map string->symbol (hash-ref h 'validators))
+    #:inner (for/list ([q (hash-ref h 'innerQuorumSets)])
+              (hash->qset q))))
+
+(define (hash->conf h)
+  (for/hash ([(n q) (in-hash h)])
+    (values (string->symbol n) (hash->qset q))))
