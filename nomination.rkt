@@ -18,56 +18,61 @@
   (for/and ([n q])
     (sat? (hash-ref conf n) q)))
 
-(define/contract (neighbors qset N)
-  (-> qset? draw/c set?)
-  (for/set
-    ([n (qset-members qset)]
-     #:when (< (hash-ref N n) (weight qset n)))
-    n))
+(define/contract (neighbors n qset N)
+  (-> node/c qset? draw/c set?)
+  (set-union
+    (set n) ; a node is always in its neighbors set (it has weight 1 implicitly)
+    (for/set
+      ([m (qset-members qset)]
+       #:when (< (hash-ref N m) (weight qset m)))
+      m)))
+; NOTE it seems bad that a node is always in its neighbors set because that means neighbors sets will likely be different accross nodes that are otherwise configured the same.
 
 (module+ test
   (require
     (submod "qset.rkt" test)
     rackunit)
-  (provide (all-defined-out))
+  (provide
+    (all-defined-out)
+    (all-from-out (submod "qset.rkt" test)))
   (define N1 (make-immutable-hash '((1 . 0.1) (2 . 0.1) (3 . 0.1))))
   (define N2 (make-immutable-hash '((1 . 0.1) (2 . 0.1) (3 . 0.9))))
   (test-case
     "neighbors"
     (check-true
       (set=?
-        (neighbors qset-1 N1)
+        (neighbors 1 qset-1 N1)
         (set 1 2 3)))
     (check-true
       (set=?
-        (neighbors qset-1 N2)
+        (neighbors 1 qset-1 N2)
         (set 1 2)))))
 
-(define/contract (leader qset N P)
-  (-> qset? draw/c draw/c node/c)
-  (define ns (neighbors qset N))
+(define/contract (leader n qset N P)
+  (-> node/c qset? draw/c draw/c node/c)
+  (define ns (neighbors n qset N))
   (cond
     [(set-empty? ns)
      #f]
     [else
-      (define weights
+      (define priority
         (for/list
           ([m ns])
           `(,m . ,(hash-ref P m))))
       (car
         (argmax
           cdr
-          weights))]))
+          priority))]))
 
 (module+ test
   (define P1 (make-immutable-hash '((1 . 0.1) (2 . 0.2) (3 . 0.3))))
   (test-case
     "leader"
     (check-equal?
-      (leader qset-1 N1 P1)
+      (leader 1 qset-1 N1 P1)
       3)
     (check-equal?
-      (leader qset-1 N2 P1)
+      (leader 1 qset-1 N2 P1)
       2)))
 
 (define state/c
@@ -79,7 +84,7 @@
     (cond
       [(not (equal? v #f)) (values n v)]
       [else
-        (define l (leader (hash-ref conf n) N P))
+        (define l (leader n (hash-ref conf n) N P))
         (cond
           [(equal? l n) (values n n)]
           [(not l) (values n #f)]
