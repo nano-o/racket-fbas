@@ -1,6 +1,9 @@
 #lang racket
 
 (require "qset.rkt")
+(provide
+  nomination-votes
+  accepted-nominated?)
 
 ; nomination protocol
 
@@ -26,6 +29,7 @@
   (require
     (submod "qset.rkt" test)
     rackunit)
+  (provide (all-defined-out))
   (define N1 (make-immutable-hash '((1 . 0.1) (2 . 0.1) (3 . 0.1))))
   (define N2 (make-immutable-hash '((1 . 0.1) (2 . 0.1) (3 . 0.9))))
   (test-case
@@ -41,18 +45,19 @@
 
 (define/contract (leader qset N P)
   (-> qset? draw/c draw/c node/c)
-  (define neighbors-weights
-    (for/list
-      ([m (neighbors qset N)])
-      `(,m . ,(hash-ref P m))))
+  (define ns (neighbors qset N))
   (cond
-    [(empty? (neighbors qset N))
+    [(set-empty? ns)
      #f]
     [else
+      (define weights
+        (for/list
+          ([m ns])
+          `(,m . ,(hash-ref P m))))
       (car
         (argmax
           cdr
-          neighbors-weights))]))
+          weights))]))
 
 (module+ test
   (define P1 (make-immutable-hash '((1 . 0.1) (2 . 0.2) (3 . 0.3))))
