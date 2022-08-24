@@ -133,6 +133,24 @@
     (member p (qset-validators qset)))
   (or in-inner-qsets in-validators))
 
+(define (qset-members qset)
+  (apply
+    set-union
+    (cons
+      (list->set (qset-validators qset))
+      (for/list ([inn (qset-inner-qsets qset)])
+        (qset-members inn)))))
+
+(module+ test
+  (test-case
+    "qset-members"
+    (check-equal?
+      (qset-members qset-1)
+      (set 1 2 3))
+    (check-equal?
+      (qset-members qset-6)
+      (set 'A 1 2 3 'a 'b 'c 'x 'y 'z))))
+
 ; This is how core computes weights, but it's not how it's defined in the whitepaper (see tests)
 (define/contract (whitepaper-wheight qset p)
   (-> qset? node/c node/c)
