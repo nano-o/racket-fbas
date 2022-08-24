@@ -1,30 +1,32 @@
 #lang gamble
 
 (require
-  "fba.rkt"
-  (submod "fba.rkt" test))
+  "nomination.rkt"
+  (submod "nomination.rkt" test)
+  "stellar-network.rkt")
 
-(define (assign-random-vals fbas)
-  (for/hash ([n (hash-keys fbas)])
+(define (assign-random-vals conf)
+  (for/hash ([n (hash-keys conf)])
     (values n (sample (uniform-dist 0 1)))))
 
-(define (run-nomination fbas)
+(define (run-nomination conf)
   (define N
-    (assign-random-vals fbas))
+    (assign-random-vals conf))
   (define P
-    (assign-random-vals fbas))
+    (assign-random-vals conf))
   (define s
-    (nomination-votes fbas N P))
+    (nomination-votes conf N P))
   (define accepted?
-    (accepted-nominated? fbas s))
+    (accepted-nominated? conf s))
   accepted?)
 
-(define (my-sampler fbas)
+(define (my-sampler conf)
   (rejection-sampler
-    (run-nomination fbas)))
+    (run-nomination conf)))
 
-(define (get-distribution num-samples fbas)
-  (sampler->discrete-dist (my-sampler fbas) num-samples))
+(define (get-distribution num-samples conf)
+  (sampler->discrete-dist (my-sampler conf) num-samples))
 
-; TODO generate more complex intact fbas
-; TODO try the current top-tier configuration
+;(get-distribution 100 conf0)
+(define stellar-conf (hash->conf (get-stellar-top-tier-qsets)))
+(get-distribution 10000 stellar-conf)
