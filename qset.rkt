@@ -26,7 +26,7 @@
 
 ; A quorum-set represents sets of sets of nodes using thresholds
 ; This is what is used on the wire in the Stellar network
-(define-struct qset (threshold validators inner-qsets))
+(define-struct qset (threshold validators inner-qsets) #:transparent)
 
 (define (qset-kw #:threshold t #:validators vs #:inner qs)
   (qset t vs qs))
@@ -215,7 +215,7 @@
 
 (module+ test
   (test-case
-    "quorum?"
+    "sat?"
     (check-true (sat? qset-1 (set 1 2)))
     (check-false (sat? qset-1 (set 1)))
     (check-true (sat? qset-5 (set 1 2 'x 'z)))

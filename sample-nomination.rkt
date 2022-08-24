@@ -1,6 +1,7 @@
 #lang gamble
 
 (require
+  (only-in "qset.rkt" qset)
   "nomination.rkt"
   (submod "nomination.rkt" test)
   "stellar-network.rkt")
@@ -16,6 +17,9 @@
     (assign-random-vals conf))
   (define s
     (nomination-votes conf N P))
+  (define failed?
+    (for/and ([n (hash-keys s)])
+      (equal? (hash-ref s n ) #f)))
   (define accepted?
     (accepted-nominated? conf s))
   accepted?)
@@ -27,6 +31,7 @@
 (define (get-distribution num-samples conf)
   (sampler->discrete-dist (my-sampler conf) num-samples))
 
-;(get-distribution 100 conf0)
-(define stellar-conf (hash->conf (get-stellar-top-tier-qsets)))
-(get-distribution 10000 stellar-conf)
+; to get the current top-tier config:
+;(define stellar-conf (hash->conf (get-stellar-top-tier-qsets)))
+; to run the sampling:
+;(get-distribution 1000 stellar-conf)
