@@ -17,7 +17,8 @@
     [elems (-> qset? list?)]
     [expand (-> qset? (set/c set?))]
     [qset-member? (-> qset? node/c boolean?)]
-    [weight (-> qset? node/c number?)]))
+    [weight (-> qset? node/c number?)]
+    [quorum? (-> qset? node/c boolean?)]))
 
 ; A quorum-set represents sets of sets of nodes using thresholds
 ; This is what is used on the wire in the Stellar network
@@ -152,8 +153,8 @@
       (set 'A 1 2 3 'a 'b 'c 'x 'y 'z))))
 
 ; This is how core computes weights, but it's not how it's defined in the whitepaper (see tests)
-(define/contract (whitepaper-wheight qset p)
-  (-> qset? node/c node/c)
+(define (whitepaper-wheight qset p)
+  ;(-> qset? node/c node/c)
   (define es
     (elems qset))
   (define (contains-p? e)
@@ -191,3 +192,25 @@
     (check-equal? (whitepaper-wheight qset-6 'A) (/ 1 2))
     ; NOTE the two computations do not agree here:
     (check-false (equal? (whitepaper-wheight qset-6 'A) (weight qset-6 'A)))))
+
+(define (quorum? qset q)
+  (define t
+    (for/fold
+      ([n 0])
+      ([e (elems qset)])
+      (cond
+        [(and (node/c e) (set-member? q e))
+         (+ n 1)]
+        [(and (qset? e) (quorum? e q))
+         (+ n 1)]
+        [else n])))
+  (>= t (qset-threshold qset)))
+
+(module+ test
+  (test-case
+    "quorum?"
+    (check-true (quorum? qset-1 (set 1 2)))
+    (check-false (quorum? qset-1 (set 1)))
+    (check-true (quorum? qset-5 (set 1 2 'x 'z)))
+    (check-true (quorum? qset-6 (set 'A 'x 'z)))
+    (check-false (quorum? qset-6 (set 'A 'a 'y)))))
