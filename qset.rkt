@@ -17,7 +17,7 @@
     [expand (-> qset? (set/c set?))]
     [qset-member? (-> qset? node/c boolean?)]
     [qset-members (-> qset? set?)]
-    [whitepaper-weight (-> qset? node/c number?)]
+    [weight (-> qset? node/c number?)]
     [quorum? (-> qset? node/c boolean?)]))
 
 ; a node is something for which eqv? is semantic equivalence, i.e. interned symbols, numbers, and characters.
@@ -154,11 +154,12 @@
       (qset-members qset-6)
       (set 'A 1 2 3 'a 'b 'c 'x 'y 'z))))
 
-; wheight in a qset
+; weight in a qset
 
 ; This is how core computes weights, but it's not how it's defined in the whitepaper (see tests)
 ; NOTE the sum of the node's weights can be bigger than 1
-(define (wheight qset p)
+; TODO precision of computed numbers?
+(define (weight qset p)
   ;(-> qset? node/c node/c)
   (define es
     (elems qset))
@@ -166,13 +167,13 @@
     (cond
       [(qset? e) (qset-member? qset p)]
       [else (eqv? p e)]))
-  (define e
+  (define e ; element in which p first occurs
     (findf contains-p? es))
   (define r
     (/ (qset-threshold qset) (length es)))
   (cond
     [(qset? e)
-     (* (wheight e p) r)]
+     (* (weight e p) r)]
     [(not e) 0]
     [else r]))
 
@@ -187,16 +188,16 @@
 (module+ test
   (test-case
     "weight"
-    (check-equal? (wheight qset-1 '1) (/ 2 3))
-    (check-equal? (wheight qset-1 '1) (whitepaper-weight qset-1 '1))
-    (check-equal? (wheight qset-5 '1) (/ 4 9))
-    (check-equal? (wheight qset-5 '1) (whitepaper-weight qset-5 '1))
-    (check-equal? (wheight qset-6 '1) (/ 1 3))
+    (check-equal? (weight qset-1 '1) (/ 2 3))
+    (check-equal? (weight qset-1 '1) (whitepaper-weight qset-1 '1))
+    (check-equal? (weight qset-5 '1) (/ 4 9))
+    (check-equal? (weight qset-5 '1) (whitepaper-weight qset-5 '1))
+    (check-equal? (weight qset-6 '1) (/ 1 3))
     ; NOTE the two computations do not agree here:
-    (check-false (equal? (wheight qset-6 '1) (whitepaper-weight qset-6 '1)))
-    (check-equal? (wheight qset-6 'A) (/ 1 2))
+    (check-false (equal? (weight qset-6 '1) (whitepaper-weight qset-6 '1)))
+    (check-equal? (weight qset-6 'A) (/ 1 2))
     ; NOTE the two computations do not agree here:
-    (check-false (equal? (wheight qset-6 'A) (whitepaper-weight qset-6 'A)))))
+    (check-false (equal? (weight qset-6 'A) (whitepaper-weight qset-6 'A)))))
 
 (define (quorum? qset q)
   (define t
