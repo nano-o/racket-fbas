@@ -1,8 +1,7 @@
 #lang racket
 
-(require
-  (only-in "fba.rkt" node/c))
 (provide
+  node/c
   (contract-out
     [struct qset
       ((threshold exact-positive-integer?)
@@ -17,8 +16,13 @@
     [elems (-> qset? list?)]
     [expand (-> qset? (set/c set?))]
     [qset-member? (-> qset? node/c boolean?)]
-    [weight (-> qset? node/c number?)]
+    [qset-members (-> qset? set?)]
+    [whitepaper-weight (-> qset? node/c number?)]
     [quorum? (-> qset? node/c boolean?)]))
+
+; a node is something for which eqv? is semantic equivalence, i.e. interned symbols, numbers, and characters.
+(define node/c
+  (or/c (and/c symbol? symbol-interned?) number? char?))
 
 ; A quorum-set represents sets of sets of nodes using thresholds
 ; This is what is used on the wire in the Stellar network
@@ -124,8 +128,6 @@
       (expand qset-6)
       (list->set (map list->set '((1 2 a b) (1 2 a c) (1 2 b c) (1 3 a b) (1 3 a c) (1 3 b c) (2 3 a b) (2 3 a c) (2 3 b c) (1 2 x y) (1 2 x z) (1 2 y z) (1 3 x y) (1 3 x z) (1 3 y z) (2 3 x y) (2 3 x z) (2 3 y z) (1 2 A) (1 3 A) (2 3 A) (a b x y) (a b x z) (a b y z) (a c x y) (a c x z) (a c y z) (b c x y) (b c x z) (b c y z) (a b A) (a c A) (b c A) (x y A) (x z A) (y z A)))))))
 
-; wheight in a qset
-
 (define (qset-member? qset p)
   (define in-inner-qsets
     (for/or ([q (qset-inner-qsets qset)])
@@ -152,8 +154,11 @@
       (qset-members qset-6)
       (set 'A 1 2 3 'a 'b 'c 'x 'y 'z))))
 
+; wheight in a qset
+
 ; This is how core computes weights, but it's not how it's defined in the whitepaper (see tests)
-(define (whitepaper-wheight qset p)
+; NOTE the sum of the node's weights can be bigger than 1
+(define (wheight qset p)
   ;(-> qset? node/c node/c)
   (define es
     (elems qset))
@@ -167,12 +172,12 @@
     (/ (qset-threshold qset) (length es)))
   (cond
     [(qset? e)
-     (* (whitepaper-wheight e p) r)]
+     (* (wheight e p) r)]
     [(not e) 0]
     [else r]))
 
 ; This is how the weight of a node is defined in the whitepaper
-(define (weight qset p)
+(define (whitepaper-weight qset p)
   (define expanded (expand qset))
   (define n-in
     (length (filter (λ (s) (set-member? s p)) (set->list expanded))))
@@ -182,16 +187,16 @@
 (module+ test
   (test-case
     "weight"
-    (check-equal? (whitepaper-wheight qset-1 '1) (/ 2 3))
-    (check-equal? (whitepaper-wheight qset-1 '1) (weight qset-1 '1))
-    (check-equal? (whitepaper-wheight qset-5 '1) (/ 4 9))
-    (check-equal? (whitepaper-wheight qset-5 '1) (weight qset-5 '1))
-    (check-equal? (whitepaper-wheight qset-6 '1) (/ 1 3))
+    (check-equal? (wheight qset-1 '1) (/ 2 3))
+    (check-equal? (wheight qset-1 '1) (whitepaper-weight qset-1 '1))
+    (check-equal? (wheight qset-5 '1) (/ 4 9))
+    (check-equal? (wheight qset-5 '1) (whitepaper-weight qset-5 '1))
+    (check-equal? (wheight qset-6 '1) (/ 1 3))
     ; NOTE the two computations do not agree here:
-    (check-false (equal? (whitepaper-wheight qset-6 '1) (weight qset-6 '1)))
-    (check-equal? (whitepaper-wheight qset-6 'A) (/ 1 2))
+    (check-false (equal? (wheight qset-6 '1) (whitepaper-weight qset-6 '1)))
+    (check-equal? (wheight qset-6 'A) (/ 1 2))
     ; NOTE the two computations do not agree here:
-    (check-false (equal? (whitepaper-wheight qset-6 'A) (weight qset-6 'A)))))
+    (check-false (equal? (wheight qset-6 'A) (whitepaper-weight qset-6 'A)))))
 
 (define (quorum? qset q)
   (define t
