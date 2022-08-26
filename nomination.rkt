@@ -52,8 +52,7 @@
   (-> node/c qset? draw/c draw/c node/c)
   (define ns (neighbors n qset N))
   (cond
-    [(set-empty? ns)
-     #f]
+    [(set-empty? ns) #f] ; never happens if a node is always in its own neighbors set
     [else
       (define priority
         (for/list
