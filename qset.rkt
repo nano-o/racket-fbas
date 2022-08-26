@@ -89,8 +89,8 @@
 
 ; TODO use on qset struct:
 
-(define (elems qset)
-  (append (qset-validators qset) (qset-inner-qsets qset)))
+(define (elems qs)
+  (append (qset-validators qs) (qset-inner-qsets qs)))
 
 (define (expand qs)
   ;(-> qset? (set/c set?))
@@ -128,20 +128,20 @@
       (expand qset-6)
       (list->set (map list->set '((1 2 a b) (1 2 a c) (1 2 b c) (1 3 a b) (1 3 a c) (1 3 b c) (2 3 a b) (2 3 a c) (2 3 b c) (1 2 x y) (1 2 x z) (1 2 y z) (1 3 x y) (1 3 x z) (1 3 y z) (2 3 x y) (2 3 x z) (2 3 y z) (1 2 A) (1 3 A) (2 3 A) (a b x y) (a b x z) (a b y z) (a c x y) (a c x z) (a c y z) (b c x y) (b c x z) (b c y z) (a b A) (a c A) (b c A) (x y A) (x z A) (y z A)))))))
 
-(define (qset-member? qset p)
+(define (qset-member? qs p)
   (define in-inner-qsets
-    (for/or ([q (qset-inner-qsets qset)])
+    (for/or ([q (qset-inner-qsets qs)])
       (qset-member? q p)))
   (define in-validators
-    (member p (qset-validators qset)))
+    (and (member p (qset-validators qs)) #t))
   (or in-inner-qsets in-validators))
 
-(define (qset-members qset)
+(define (qset-members qs)
   (apply
     set-union
     (cons
-      (list->set (qset-validators qset))
-      (for/list ([inn (qset-inner-qsets qset)])
+      (list->set (qset-validators qs))
+      (for/list ([inn (qset-inner-qsets qs)])
         (qset-members inn)))))
 
 (module+ test
@@ -158,28 +158,27 @@
 
 ; This is how core computes weights, but it's not how it's defined in the whitepaper (see tests)
 ; NOTE the sum of the node's weights can be bigger than 1
-; TODO precision of computed numbers?
-(define (weight qset p)
+(define (weight q p)
   ;(-> qset? node/c node/c)
   (define es
-    (elems qset))
+    (elems q))
   (define (contains-p? e)
     (cond
-      [(qset? e) (qset-member? qset p)]
+      [(qset? e) (qset-member? e p)]
       [else (eqv? p e)]))
   (define e ; element in which p first occurs
     (findf contains-p? es))
   (define r
-    (/ (qset-threshold qset) (length es)))
+    (/ (qset-threshold q) (length es)))
   (cond
     [(qset? e)
      (* (weight e p) r)]
-    [(not e) 0]
+    [(not e) 0] ; node is not in the qset
     [else r]))
 
 ; This is how the weight of a node is defined in the whitepaper
-(define (whitepaper-weight qset p)
-  (define expanded (expand qset))
+(define (whitepaper-weight qs p)
+  (define expanded (expand qs))
   (define n-in
     (length (filter (λ (s) (set-member? s p)) (set->list expanded))))
   (define total (length (set->list expanded)))
@@ -200,18 +199,18 @@
     (check-false (equal? (weight qset-6 'A) (whitepaper-weight qset-6 'A)))))
 
 ; whether q satisfies the requirements of the qset
-(define (sat? qset q)
+(define (sat? qs q)
   (define t
     (for/fold
       ([n 0])
-      ([e (elems qset)])
+      ([e (elems qs)])
       (cond
         [(and (node/c e) (set-member? q e))
          (+ n 1)]
         [(and (qset? e) (sat? e q))
          (+ n 1)]
         [else n])))
-  (>= t (qset-threshold qset)))
+  (>= t (qset-threshold qs)))
 
 (module+ test
   (test-case
