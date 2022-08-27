@@ -7,16 +7,66 @@
 
 ; nomination protocol
 
+; weight in a qset
+
+; This is how core computes weights, but it's not how it's defined in the
+; whitepaper (see tests)
+
+; NOTE the sum of the node's weights can be bigger than 1, but individual
+; weights are between 0 and 1.
+
+; The weight of a node is the probability of picking a node if we recursively
+; pick a number of nodes/qsets equal to the qset threshold uniformaly at
+; random.
+(define (weight q p)
+  ;(-> qset? node/c node/c)
+  (define es
+    (elems q))
+  (define (contains-p? e)
+    (cond
+      [(qset? e) (qset-member? e p)]
+      [else (eqv? p e)]))
+  (define e ; element in which p first occurs
+    (findf contains-p? es))
+  (define r
+    (/ (qset-threshold q) (length es)))
+  (cond
+    [(qset? e)
+     (* (weight e p) r)]
+    [(not e) 0] ; node is not in the qset
+    [else r]))
+
+; This is how the weight of a node is defined in the whitepaper
+(define (whitepaper-weight qs p)
+  (define expanded (expand qs))
+  (define n-in
+    (length (filter (λ (s) (set-member? s p)) (set->list expanded))))
+  (define total (length (set->list expanded)))
+  (/ n-in total))
+
+(module+ test
+  (require
+    (submod "qset.rkt" test)
+    rackunit)
+  (provide
+    (all-defined-out)
+    (all-from-out (submod "qset.rkt" test)))
+  (test-case
+    "weight"
+    (check-equal? (weight qset-1 '1) (/ 2 3))
+    (check-equal? (weight qset-1 '1) (whitepaper-weight qset-1 '1))
+    (check-equal? (weight qset-5 '1) (/ 4 9))
+    (check-equal? (weight qset-5 '1) (whitepaper-weight qset-5 '1))
+    (check-equal? (weight qset-6 '1) (/ 1 3))
+    ; NOTE the two computations do not agree here:
+    (check-false (equal? (weight qset-6 '1) (whitepaper-weight qset-6 '1)))
+    (check-equal? (weight qset-6 'A) (/ 1 2))
+    ; NOTE the two computations do not agree here:
+    (check-false (equal? (weight qset-6 'A) (whitepaper-weight qset-6 'A)))))
+
 ; a draw associates numbers between 0 and 1 to nodes
 (define draw/c
   (hash/c node/c number?))
-
-(define conf/c
-  (hash/c node/c qset?))
-
-(define (quorum? conf q)
-  (for/and ([n q])
-    (sat? (hash-ref conf n) q)))
 
 (define/contract (neighbors n qset N)
   (-> node/c qset? draw/c set?)
@@ -26,15 +76,8 @@
       ([m (qset-members qset)]
        #:when (< (hash-ref N m) (weight qset m)))
       m)))
-; NOTE it seems bad that a node is always in its neighbors set because that means neighbors sets will likely be different accross nodes that are otherwise configured the same.
 
 (module+ test
-  (require
-    (submod "qset.rkt" test)
-    rackunit)
-  (provide
-    (all-defined-out)
-    (all-from-out (submod "qset.rkt" test)))
   (define N1 (make-immutable-hash '((1 . 0.1) (2 . 0.1) (3 . 0.1))))
   (define N2 (make-immutable-hash '((1 . 0.1) (2 . 0.1) (3 . 0.9))))
   (test-case
@@ -114,6 +157,7 @@
         (fixpoint-f fv))))
   fixpoint-f)
 
+; The votes that are cast in the first round of nomination, assuming the network is perfect.
 (define (nomination-votes conf N P)
   ((until-fixpoint (λ (s) (nomination-step conf N P s))) (s-0 conf)))
 
@@ -124,7 +168,7 @@
       (nomination-votes conf0 N1 P1)
       (make-immutable-hash (zip (hash-keys conf0) (make-list 3 3))))))
 
-; check whether a value has been accepted as nominated
+; Whether a value has been accepted as nominated at the end of the first round of nomination.
 (define/contract (accepted-nominated? conf s)
   (-> conf/c state/c boolean?)
   (define (voted-for v)
@@ -144,5 +188,3 @@
       (accepted-nominated? conf0 (nomination-step conf0 N1 P1 (s-0 conf0))))
     (check-true
       (accepted-nominated? conf0 (nomination-votes conf0 N1 P1)))))
-
-; TODO multiple rounds of nomination

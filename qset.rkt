@@ -2,6 +2,7 @@
 
 (provide
   node/c
+  conf/c
   (contract-out
     [struct qset
       ((threshold exact-positive-integer?)
@@ -17,8 +18,8 @@
     [expand (-> qset? (set/c set?))]
     [qset-member? (-> qset? node/c boolean?)]
     [qset-members (-> qset? set?)]
-    [weight (-> qset? node/c number?)]
-    [sat? (-> qset? set? boolean?)]))
+    [sat? (-> qset? set? boolean?)]
+    [quorum? (-> conf/c set? boolean?)]))
 
 ; a node is something for which eqv? is semantic equivalence, i.e. interned symbols, numbers, and characters.
 (define node/c
@@ -154,50 +155,6 @@
       (qset-members qset-6)
       (set 'A 1 2 3 'a 'b 'c 'x 'y 'z))))
 
-; weight in a qset
-
-; This is how core computes weights, but it's not how it's defined in the whitepaper (see tests)
-; NOTE the sum of the node's weights can be bigger than 1
-(define (weight q p)
-  ;(-> qset? node/c node/c)
-  (define es
-    (elems q))
-  (define (contains-p? e)
-    (cond
-      [(qset? e) (qset-member? e p)]
-      [else (eqv? p e)]))
-  (define e ; element in which p first occurs
-    (findf contains-p? es))
-  (define r
-    (/ (qset-threshold q) (length es)))
-  (cond
-    [(qset? e)
-     (* (weight e p) r)]
-    [(not e) 0] ; node is not in the qset
-    [else r]))
-
-; This is how the weight of a node is defined in the whitepaper
-(define (whitepaper-weight qs p)
-  (define expanded (expand qs))
-  (define n-in
-    (length (filter (λ (s) (set-member? s p)) (set->list expanded))))
-  (define total (length (set->list expanded)))
-  (/ n-in total))
-
-(module+ test
-  (test-case
-    "weight"
-    (check-equal? (weight qset-1 '1) (/ 2 3))
-    (check-equal? (weight qset-1 '1) (whitepaper-weight qset-1 '1))
-    (check-equal? (weight qset-5 '1) (/ 4 9))
-    (check-equal? (weight qset-5 '1) (whitepaper-weight qset-5 '1))
-    (check-equal? (weight qset-6 '1) (/ 1 3))
-    ; NOTE the two computations do not agree here:
-    (check-false (equal? (weight qset-6 '1) (whitepaper-weight qset-6 '1)))
-    (check-equal? (weight qset-6 'A) (/ 1 2))
-    ; NOTE the two computations do not agree here:
-    (check-false (equal? (weight qset-6 'A) (whitepaper-weight qset-6 'A)))))
-
 ; whether q satisfies the requirements of the qset
 (define (sat? qs q)
   (define t
@@ -220,3 +177,27 @@
     (check-true (sat? qset-5 (set 1 2 'x 'z)))
     (check-true (sat? qset-6 (set 'A 'x 'z)))
     (check-false (sat? qset-6 (set 'A 'a 'y)))))
+
+(define conf/c
+  (hash/c node/c qset?))
+
+(define/contract (quorum? conf q)
+  (-> conf/c set? boolean?)
+  (for/and ([n q])
+    (sat? (hash-ref conf n) q)))
+
+(define (quorum?-2 conf q)
+  (define expanded
+    (for/hash ([(k v) (in-hash conf)])
+      (values k (expand v))))
+  (for/and ([n q])
+    (for/or ([s (hash-ref expanded n)])
+      (subset? s q))))
+
+(module+ test
+  (define nodes
+    '(A a b c x y z 1 2 3))
+  (define conf
+    (make-immutable-hash (map cons nodes (make-list 10 qset-6))))
+  (for ([q (map list->set (combinations nodes))])
+    (check-equal? (quorum? conf q) (quorum?-2 conf q))))
