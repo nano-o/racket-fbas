@@ -6,6 +6,7 @@
   (only-in "qset.rkt" qset qset-kw qset-validators qset-threshold qset-inner-qsets))
 (provide
   get-stellar-conf
+  get-stellar-top-tier-conf
   get-stellar-top-tier-qsets
   hash->conf)
 
@@ -48,13 +49,13 @@
   (for/hash ([n current-top-tier-nodes])
     (values n (hash-ref (quorum-sets info) n))))
 
+(define (get-stellar-top-tier-conf)
+  (hash->conf (get-stellar-top-tier-qsets)))
+
 (define (get-stellar-conf)
   (define info
     (network-info stellarbeat-url-string))
   (hash->conf (quorum-sets info)))
-
-(define (get-stellar-top-tier-conf)
-  (hash->conf (get-stellar-top-tier-qsets)))
 
 (define (hash->qset h)
   (qset-kw

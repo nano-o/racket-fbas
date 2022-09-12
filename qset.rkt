@@ -155,19 +155,19 @@
       (qset-members qset-6)
       (set 'A 1 2 3 'a 'b 'c 'x 'y 'z))))
 
-; whether q satisfies the requirements of the qset
-(define (sat? qs q)
+; whether s satisfies the requirements of the qset
+(define (sat? q s)
   (define t
     (for/fold
       ([n 0])
-      ([e (elems qs)])
+      ([e (elems q)])
       (cond
-        [(and (node/c e) (set-member? q e))
+        [(and (node/c e) (set-member? s e))
          (+ n 1)]
-        [(and (qset? e) (sat? e q))
+        [(and (qset? e) (sat? e s))
          (+ n 1)]
         [else n])))
-  (>= t (qset-threshold qs)))
+  (>= t (qset-threshold q)))
 
 (module+ test
   (test-case
