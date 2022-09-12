@@ -5,6 +5,7 @@
   net/url
   (only-in "qset.rkt" qset qset-kw qset-validators qset-threshold qset-inner-qsets))
 (provide
+  get-stellar-conf
   get-stellar-top-tier-qsets
   hash->conf)
 
@@ -34,20 +35,26 @@
   (for/hash ([n (hash-ref info 'nodes)])
     (values (hash-ref n 'publicKey) (hash-ref n 'quorumSet))))
 
-;(define (top-tier-nodes info top-tier-org-names)
-  ;(hash-ref response 'nodes))
+(define stellarbeat-url-string
+  "https://api.stellarbeat.io/v1")
 
 (define (get-stellar-top-tier-qsets)
-  (define stellarbeat-url-string
-    "https://api.stellarbeat.io/v1")
-  (define current-top-tier-org-names
-    '("Stellar Development Foundation" "Wirex Limited" "Public Node" "COINQVEST LLC" "SatoshiPay" "LOBSTR" "Blockdaemon Inc."))
   (define info
     (network-info stellarbeat-url-string))
+  (define current-top-tier-org-names
+  '("Stellar Development Foundation" "Wirex Limited" "Public Node" "COINQVEST LLC" "SatoshiPay" "LOBSTR" "Blockdaemon Inc."))
   (define current-top-tier-nodes
     (top-tier-nodes info current-top-tier-org-names))
   (for/hash ([n current-top-tier-nodes])
     (values n (hash-ref (quorum-sets info) n))))
+
+(define (get-stellar-conf)
+  (define info
+    (network-info stellarbeat-url-string))
+  (hash->conf (quorum-sets info)))
+
+(define (get-stellar-top-tier-conf)
+  (hash->conf (get-stellar-top-tier-qsets)))
 
 (define (hash->qset h)
   (qset-kw
