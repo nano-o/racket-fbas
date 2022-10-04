@@ -1,13 +1,17 @@
 #lang scribble/manual
+
 @(require
    scribble/eval
    (for-label
      racket
+     (only-in gamble rejection-sampler sampler->discrete-dist)
      (rename-in "qset.rkt" [expand expand-qset])))
 
 @title{The racket-fbas library}
 
 Welcome to the documentation of the racket-fbas library.
+
+@section{Quorum sets}
 
 @defmodule[racket-fbas/qset]
 
@@ -90,4 +94,17 @@ Here is the definition of @racket[quorum?]:
     my-conf
     (quorum? my-conf (set 1 2))
     (quorum? my-conf (set 3))
-    (quorum? my-conf (set 1 2 3)) ]
+    (quorum? my-conf (set 1 2 3))
+ ]
+
+@section{The nomiation protocol}
+
+The goal of the nomination protocol is to agree on a proposed block as
+described in the Stellar Whitepaper. Nomination proceeds in rounds. In each
+round, nodes use federated voting on statements of the form "nominate B" for
+some blocks B. To minimize the number of blocks voted on, a node picks a leader
+for the current round and votes for a block B only if it hears that its leader
+voted for it, and a node that elects itself as leader votes for a block of its
+choice.
+
+To pick a leader, a node assigns two pseudo-random numbers (using a hash function agreed upon by all nodes) to each of its peers: a weight threshold N and a prioriy P. The,

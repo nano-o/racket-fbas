@@ -16,7 +16,7 @@
 ; weights are between 0 and 1.
 
 ; The weight of a node is the probability of picking a node if we recursively
-; pick a number of nodes/qsets equal to the qset threshold uniformaly at
+; pick a number of nodes/qsets equal to the qset threshold uniformly at
 ; random.
 (define (weight q p)
   ;(-> qset? node/c node/c)
@@ -36,7 +36,9 @@
     [(not e) 0] ; node is not in the qset
     [else r]))
 
-; This is how the weight of a node is defined in the whitepaper
+; This is how the weight of a node is defined in the whitepaper: we count the
+; number of slices in which the node appears, and we divide by the total number
+; of slices.
 (define (whitepaper-weight qs p)
   (define expanded (expand qs))
   (define n-in
@@ -44,6 +46,10 @@
   (define total (length (set->list expanded)))
   (/ n-in total))
 
+; Note that the two weight computations may give different results.
+; If one counts as in the whitepaper, a deeply nested qset may give rise to a
+; lot of slices, which will decrease the weight of another non-deeply nested
+; qset at the same level.
 (module+ test
   (require
     (submod "qset.rkt" test)
@@ -59,10 +65,12 @@
     (check-equal? (weight qset-5 '1) (whitepaper-weight qset-5 '1))
     (check-equal? (weight qset-6 '1) (/ 1 3))
     ; NOTE the two computations do not agree here:
-    (check-false (equal? (weight qset-6 '1) (whitepaper-weight qset-6 '1)))
+    (check-not-equal? (weight qset-6 '1) (whitepaper-weight qset-6 '1))
     (check-equal? (weight qset-6 'A) (/ 1 2))
     ; NOTE the two computations do not agree here:
-    (check-false (equal? (weight qset-6 'A) (whitepaper-weight qset-6 'A)))))
+    (check-not-equal? (weight qset-6 'A) (whitepaper-weight qset-6 'A))
+    (check-equal? (weight qset-6 'A) (/ 1 2))
+    (check-equal? (whitepaper-weight qset-6 'A) (/ 1 4))))
 
 ; a draw associates numbers between 0 and 1 to nodes
 (define draw/c

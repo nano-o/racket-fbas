@@ -51,7 +51,7 @@
   (define qset-6
     (qset-kw #:threshold 2 #:validators (list 'A) #:inner (list qset-1 qset-3 qset-4))))
 
-; We will use cartesian-product to transform a qset into an fbas
+; We will use cartesian-product to transform a qset into a set of slices
 (define (cartesian-product ss)
   ;(-> (listof set?) set?)
   (match ss
@@ -88,11 +88,13 @@
       (cartesian-product (list (set 'a 'b) (set '1 '2) (set 'x 'y)))
       (list->set '((a 1 x) (a 1 y) (a 2 x) (a 2 y) (b 1 x) (b 1 y) (b 2 x) (b 2 y))))))
 
-; TODO use on qset struct:
-
 (define (elems qs)
   (append (qset-validators qs) (qset-inner-qsets qs)))
 
+; Now we define the expansion of a qset, i.e. the corresponding set of slices
+; First we recursively expand every element of the qset (where the expansion of a node n is {{n}})
+; Then we take all combinations c of k out of n expanded elements (where order doesn't matter)
+; Finally we take the cartesian product within each c and union the result
 (define (expand qs)
   ;(-> qset? (set/c set?))
   (define es
@@ -111,7 +113,7 @@
        set-union
        (for/list ([c cs])
          (for/set ([t (cartesian-product c)])
-                  (apply set-union t))))]))
+           (apply set-union t))))]))
 
 (module+ test
   (test-case
@@ -129,6 +131,7 @@
       (expand qset-6)
       (list->set (map list->set '((1 2 a b) (1 2 a c) (1 2 b c) (1 3 a b) (1 3 a c) (1 3 b c) (2 3 a b) (2 3 a c) (2 3 b c) (1 2 x y) (1 2 x z) (1 2 y z) (1 3 x y) (1 3 x z) (1 3 y z) (2 3 x y) (2 3 x z) (2 3 y z) (1 2 A) (1 3 A) (2 3 A) (a b x y) (a b x z) (a b y z) (a c x y) (a c x z) (a c y z) (b c x y) (b c x z) (b c y z) (a b A) (a c A) (b c A) (x y A) (x z A) (y z A)))))))
 
+; Tests whether p appears anywhere in the qset:
 (define (qset-member? qs p)
   (define in-inner-qsets
     (for/or ([q (qset-inner-qsets qs)])
@@ -148,6 +151,9 @@
 (module+ test
   (test-case
     "qset-members"
+    (check-true (qset-member? qset-1 3))
+    (check-false (qset-member? qset-1 4))
+    (check-true (qset-member? qset-6 'z))
     (check-equal?
       (qset-members qset-1)
       (set 1 2 3))
@@ -196,7 +202,7 @@
 
 (module+ test
   (define nodes
-    '(A a b c x y z 1 2 3))
+    (set->list (qset-members qset-6)))
   (define conf
     (make-immutable-hash (map cons nodes (make-list 10 qset-6))))
   (for ([q (map list->set (combinations nodes))])
