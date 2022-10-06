@@ -44,3 +44,6 @@ Here we are interested in estimating the probability that, in a given
 configuration, at least a quorum votes to nominate the same block in the first
 round. For this, we model the first nomination round in racket and then sample
 the resulting distribution.
+
+@chunk[<*>
+(require racket "qset.rkt")]

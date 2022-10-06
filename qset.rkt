@@ -15,7 +15,7 @@ configuration.
 <slices>
 <sat?>
 <system>
-<tests>]
+<qset-tests>]
 
 @chunk[<provide>
 (provide
@@ -265,7 +265,7 @@ of each of its members.
 <conf/c>
 <quorum?>]
 
-@chunk[<tests>
+@chunk[<qset-tests>
 <test-qset-examples>
 <test-qset-members>
 <test-slices>

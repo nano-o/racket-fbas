@@ -74,3 +74,7 @@ Welcome to the documentation of the racket-fbas library.
     (quorum? my-conf (set 3))
     (quorum? my-conf (set 1 2 3))
     (quorum? my-conf (set))]
+
+@subsection{Implementation}
+
+The implementation is a literate program: @other-doc['(lib "racket-fbas/qset.rkt")].

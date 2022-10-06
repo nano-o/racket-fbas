@@ -1,2 +1,2 @@
 #lang info
-(define scribblings '(("manual.scrbl" ())))
+(define scribblings '(("manual.scrbl" ()) ("qset.rkt" ())))
