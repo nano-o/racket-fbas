@@ -1,6 +1,6 @@
 #lang scribble/lp2
 
-@title{Quorum sets}
+@title{Racket implementation of quorum sets}
 
 @section{Overview}
 
@@ -8,7 +8,7 @@ In this file, we define quorum sets and provide some utility functions, among
 which @code{quorum?}, which cheks whether a set is a quorum in a given system
 configuration.
 
-@chunk[<*>
+@chunk[<qset-main>
 (require racket)
 <provide>
 <basic-qset-defs>
@@ -39,7 +39,7 @@ configuration.
     [sat? (-> qset? set? boolean?)]
     [quorum? (-> conf/c set? boolean?)]))]
 
-@section{Quorum sets}
+@section{Basic quorum set definitions}
 
 @chunk[<basic-qset-defs>
 <node-contract>

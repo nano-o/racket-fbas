@@ -12,6 +12,9 @@
 
 Welcome to the documentation of the racket-fbas library.
 
+@(define my-eval (make-base-eval))
+@interaction-eval[#:eval my-eval (require racket "qset.rkt")]
+
 @section{Quorum sets}
 
 @defmodule[racket-fbas/qset]
@@ -19,6 +22,11 @@ Welcome to the documentation of the racket-fbas library.
 @defproc[(node/c [x any/c]) boolean?]{
     A contract identifying datums that can be nodes, that is something for which @racket[eqv?] is semantic equivalence, i.e. interned symbols, numbers, and characters.
 }
+
+@examples[
+    #:eval my-eval
+    (node/c 'a)
+    (node/c "a")]
 
 @defstruct[qset ([threshold exact-positive-integer?] [validators (listof node/c)] [inner-qsets (listof qset?)])]{
     A structure type for quorum sets.
@@ -28,8 +36,11 @@ Welcome to the documentation of the racket-fbas library.
     Keyword constructor for qset structures.
 }
 
-@(define my-eval (make-base-eval))
-@interaction-eval[#:eval my-eval (require racket "qset.rkt")]
+@defproc[(elems [qs qset?]) list?]{The concatenation of the list of validators and list of inner qsets of @racket[qs]}
+
+@defproc[(qset-member? [qs qset?] [n node/c]) boolean?]{Whether the node n appears anywhere in qs.}
+
+@defproc[(qset-members [qs qset?]) set]{The set of all nodes appearing anywhere in qs and its inner elements.}
 
 @defproc[(sat? [q qset?] [s (set/c node/c)]) boolean?]{
     Whether the set of nodes @racket[s] satisfies the quorum set @racket[q].
@@ -75,6 +86,12 @@ Welcome to the documentation of the racket-fbas library.
     (quorum? my-conf (set 1 2 3))
     (quorum? my-conf (set))]
 
-@subsection{Implementation}
+@subsection{Implementation qset.rkt}
 
 The implementation is a literate program: @other-doc['(lib "racket-fbas/qset.rkt")].
+
+@section{The nomination protocol}
+
+@subsection{Implementation nomination.rkt}
+
+The implementation is a literate program: @other-doc['(lib "racket-fbas/nomination.rkt")].
