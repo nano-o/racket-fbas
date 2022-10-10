@@ -78,6 +78,7 @@ This allows to define qsets as follows.
 @chunk[<test-qset-examples>
 (module+ test
   (require rackunit)
+  (provide (all-defined-out))
 
   (define qset-1
     (qset-kw #:threshold 2 #:validators '(1 2 3) #:inner empty))
