@@ -24,9 +24,10 @@ voting to nominate blocks and a node stops voting for new blocks as soon as it
 has confirmed a block. Thus, nomination is guaranteed to converge to a fixed
 set of confirmed blocks, which can then be combined deterministically to form
 the nominated block. The problem is that there's no way to tell when nomination
-has converged, and that's why we need the balloting protocol. However, in
-normal circumstances, we should expect nomination to produce a single nominated
-value, which is then fed to the balloting protocol.
+has converged, and so there is no way to guarantee that all nodes nominate the
+same value; that's why we need the balloting protocol. However, in normal
+circumstances, we should expect nomination to produce a single nominated value,
+which is then fed to the balloting protocol.
 
 Nomination proceeds in rounds. In each round, each node picks a leader and
 votes for a value voted for by the leader, and a node that picks itself as
@@ -34,9 +35,9 @@ leader votes for a value of its choice.
 
 In this file, we are interested in estimating the probability that, assuming no
 failures and that the network is as fast as need be, a quorum of nodes votes
-for the same value. A priori, it seems that, in some not-very-symmetric
-configurations, the probability of success would be small, and this would be
-bad in practice.
+for the same value in the first round. A priori, it seems that, in some
+not-very-symmetric configurations, the probability of success would be small,
+and this would be bad in practice.
 
 @section{Casting votes}
 
@@ -78,14 +79,15 @@ And the step function follows the explanation above:
           [else (values n (hash-ref s (leader-of n)))])])))
 <leader-of>]
 
-In the code above, @code{(leader-of n)} returns the leader of node @code{n}.
+In the code above, the @code{leader-of} is a parameter. @code{(leader-of n)}
+should return the leader of node @code{n}.
 
 @section{Picking a leader}
 
 To pick a leader, a node first computes its set of neighbors for the round. A
 node is a neighbor if its weight (as described below) is larger than a
 pseudo-random value, that we'll call the threshold, assigned to the node
-(obtained using a round-specific has function). So, the higher its weight the
+(obtained using a round-specific hash function). So, the higher its weight the
 more likely a node is a neighbor. Moreover, a node always considers itself a
 neighbor.
 
@@ -98,6 +100,9 @@ neighbor.
        #:when (< (hash-ref T m) (weight qset m)))
       m)))
 <weight>]
+
+Note that the set of neighbors may be empty if every node has a threshold
+higher than its weight.
 
 A few basic tests, remembering that (TODO this is not an example) :
 @examples[
@@ -256,21 +261,19 @@ And we conclude with a few tests.
       (zip '(1 2 3) (make-list 3 qset-1))))
   (test-case
     "accepted-nominated?"
-    (check-false
-      (accepted-nominated? conf0 (nomination-step conf0 N1 P1 (s-0 conf0))))
     (check-true
-      (accepted-nominated? conf0 (nomination-votes conf0 N1 P1)))))]
+      (check-success conf0 N1 P1))))]
 
 @section{Auxiliary functions}
 
 @chunk[<fixedpoint>
 (define (until-fixpoint f)
-  (define (fixpoint-f v)
+  (define (go v)
     (let ([fv (f v)])
       (if (equal? fv v)
         fv
-        (fixpoint-f fv))))
-  fixpoint-f)]
+        (go fv))))
+  go)]
 
 @chunk[<zip>
 (define (zip l1 l2)

@@ -4,9 +4,17 @@
 
 @section{Overview}
 
-In this file, we define quorum sets and provide some utility functions, among
-which @code{quorum?}, which cheks whether a set is a quorum in a given system
-configuration.
+In this file, we provide some functions related to Stellar's quorum sets. In
+particular, we define a struct to represent quorum sets, and, given a set of
+nodes and a quorum set for each node, the function @code{quorum?} cheks whether
+a set of nodes is a quorum.
+
+The program consists of a set of exported bindings, a data structure to
+represent quorum sets, a function to compute the set of slices corresponding to
+a quorum set, the function @code{sat?}, which computes whether a set of nodes
+satisfies a quorum set, a notion of quorum system (or configuration) , the
+function @code{quorum?} cheks whether a set of nodes is a quorum in a quorum
+system, and some tests:
 
 @chunk[<qset-main>
 (require racket)
@@ -47,22 +55,20 @@ configuration.
 <qset-keyword-constructor>
 <qset-aux-functions>]
 
-A quorum set is a data structure used in practice by Stellar to describe the
-set of quorum slices of a node. In this file we provide functionality related
-to quorum sets.
-
 @margin-note{Not sure anymore why we have this requirement. Maybe we want to
 use @racket[hasheqv]?}
 
-Nodes can be booleans, symbols, numbers, of chars; essentially, something for
-which @racket[eqv?] is semantic equivalence.
+We start with the contract @code{node/c}, which indicates what kind of datum we
+can use to represent nodes. This can be booleans, symbols, numbers, of chars;
+essentially, something for which @racket[eqv?] is semantic equivalence.
 
 @chunk[<node-contract>
 (define node/c
   (or/c boolean? (and/c symbol? symbol-interned?) number? char?))]
 
-A quorum set consists of a threshold, a list of validators, and a list of inner
-quorum sets.
+A quorum set is a data structure used in practice by Stellar to describe the
+set of quorum slices of a node. A quorum set consists of a threshold, a list of
+validators, and a list of inner quorum sets.
 
 @chunk[<qset-struct>
 (define-struct qset (threshold validators inner-qsets) #:transparent)]
@@ -265,6 +271,14 @@ of each of its members.
 @chunk[<system>
 <conf/c>
 <quorum?>]
+
+@subsection{Minimal quorums}
+
+@chunk[<minimal-quorum?>
+(define (minimal-quorum? conf q)
+  (not
+    (for/or ([s (combinations (set->list q))])
+      (quorum? conf (list->seteqv s)))))]
 
 @chunk[<qset-tests>
 <test-qset-examples>
