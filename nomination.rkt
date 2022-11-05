@@ -3,7 +3,8 @@
 (require "qset.rkt")
 (provide
   nomination-votes
-  accepted-nominated?)
+  accepted-nominated?
+  weight)
 
 ; nomination protocol
 
@@ -19,7 +20,7 @@
 ; pick a number of nodes/qsets equal to the qset threshold uniformly at
 ; random.
 (define (weight q p)
-  ;(-> qset? node/c node/c)
+  ;(-> qset? node/c number?)
   (define es
     (elems q))
   (define (contains-p? e)

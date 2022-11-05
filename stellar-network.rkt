@@ -3,7 +3,9 @@
 (require
   json
   net/url
-  (only-in "qset.rkt" qset qset-kw qset-validators qset-threshold qset-inner-qsets))
+  (only-in "qset.rkt" qset qset-kw qset-validators qset-threshold qset-inner-qsets qset-members)
+  (rename-in "qset.rkt" [expand expand-qset])
+  (only-in "nomination.rkt" weight))
 (provide
   get-stellar-conf
   get-stellar-top-tier-conf
@@ -67,3 +69,56 @@
 (define (hash->conf h)
   (for/hash ([(n q) (in-hash h)])
     (values (string->symbol n) (hash->qset q))))
+
+; convert a qset to nested hashmaps
+(define (to-jsexpr sqs)
+  (define (qset-to-jsexpr qs)
+    (hash
+      'threshold (qset-threshold qs)
+      'validators (map symbol->string (qset-validators qs))
+      'inner-qsets (map qset-to-jsexpr (qset-inner-qsets qs))))
+  (for/hash ([(val qs) (in-hash sqs)])
+    (values val (qset-to-jsexpr qs))))
+
+(define (to-slice-system sqs)
+  (for/hash ([(val qs) (in-hash sqs)])
+    (values
+      val
+      (for/list ([ss (in-set (expand-qset qs))])
+        (for/list ([s ss])
+          (symbol->string s))))))
+
+(define (to-weighted-graph sqs)
+  (for/hash ([(val qs) (in-hash sqs)])
+    (define peers
+      (qset-members qs))
+    (values
+      val
+      (for/hash ([p peers])
+        (values p (weight qs p))))))
+
+(define (to-weighted-graph-2 sqs)
+  (for*/list ([(val qs) (in-hash sqs)]
+              [p (qset-members qs)])
+    (list
+      (list (symbol->string val) (symbol->string p))
+      (exact->inexact (weight qs p)))))
+
+(module+ test
+  (require rackunit)
+
+  (define stellar-qsets
+    (get-stellar-conf))
+
+  (test-case
+    "to-jsexpr"
+    (check-true
+      (jsexpr? (to-jsexpr stellar-qsets)))
+    (check-not-exn
+      (thunk
+        (to-jsexpr stellar-qsets))))
+  (test-case
+    "to-slice-system"
+    (check-true
+      (jsexpr? (to-slice-system stellar-qsets))))
+  'todo)
