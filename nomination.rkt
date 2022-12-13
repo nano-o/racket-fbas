@@ -25,9 +25,9 @@ has confirmed a block. Thus, nomination is guaranteed to converge to a fixed
 set of confirmed blocks, which can then be combined deterministically to form
 the nominated block. The problem is that there's no way to tell when nomination
 has converged, and so there is no way to guarantee that all nodes nominate the
-same value; that's why we need the balloting protocol. However, in normal
-circumstances, we should expect nomination to produce a single nominated value,
-which is then fed to the balloting protocol.
+same value; that's why we need the balloting protocol after nomination.
+However, in normal circumstances, we should expect nomination to produce a
+single nominated value, which is then fed to the balloting protocol.
 
 Nomination proceeds in rounds. In each round, each node picks a leader and
 votes for a value voted for by the leader, and a node that picks itself as
@@ -43,7 +43,7 @@ and this would be bad in practice.
 
 To represent the votes cast by the nodes, we use a hashmap that maps a node
 either to its vote or to @racket[#f] if it has not voted. Initially, nobody has
-voted. They, nodes that think they are leaders vote for their own identifier.
+voted. Then, nodes that think they are leaders vote for their own identifier.
 Once those votes are cast, each node whose leader has now cast a vote casts a
 vote too, and so on until we reach a fixed point. Each step of this process is
 accomplished using the function @code{nomination-step}.
@@ -86,10 +86,10 @@ should return the leader of node @code{n}.
 
 To pick a leader, a node first computes its set of neighbors for the round. A
 node is a neighbor if its weight (as described below) is larger than a
-pseudo-random value, that we'll call the threshold, assigned to the node
-(obtained using a round-specific hash function). So, the higher its weight the
-more likely a node is a neighbor. Moreover, a node always considers itself a
-neighbor.
+pseudo-random value, that we'll call the the node's threshold, assigned to the
+node (obtained using a round-specific hash function). So, the higher its weight
+the more likely a node is a neighbor. There is just one special case: a node
+always considers itself a neighbor.
 
 @chunk[<neighbors>
 (define (neighbors n qset T) (code:comment "T associates its threshold (a number between 0 and 1) to each node")
@@ -101,8 +101,8 @@ neighbor.
       m)))
 <weight>]
 
-Note that the set of neighbors may be empty if every node has a threshold
-higher than its weight.
+Note that the set of neighbors of a node n may consist of only n when every
+node has a threshold higher than its weight.
 
 A few basic tests, remembering that (TODO this is not an example) :
 @examples[
@@ -111,17 +111,17 @@ A few basic tests, remembering that (TODO this is not an example) :
 
 @chunk[<test-neighbors>
 (module+ test
-  (define N1 (make-immutable-hash '((1 . 0.1) (2 . 0.1) (3 . 0.1))))
-  (define N2 (make-immutable-hash '((1 . 0.1) (2 . 0.1) (3 . 0.9))))
+  (define T1 (make-immutable-hash '((1 . 0.1) (2 . 0.1) (3 . 0.1))))
+  (define T2 (make-immutable-hash '((1 . 0.1) (2 . 0.1) (3 . 0.9))))
   (test-case
     "neighbors"
     (check-true
       (set=?
-        (neighbors 1 qset-1 N1)
+        (neighbors 1 qset-1 T1)
         (set 1 2 3)))
     (check-true
       (set=?
-        (neighbors 1 qset-1 N2)
+        (neighbors 1 qset-1 T2)
         (set 1 2)))))]
 
 Once the neighors set is computed, a node assigns a second pseudo-random value
@@ -152,10 +152,10 @@ A few tests:
   (test-case
     "leader"
     (check-equal?
-      (leader 1 qset-1 N1 P1)
+      (leader 1 qset-1 T1 P1)
       3)
     (check-equal?
-      (leader 1 qset-1 N2 P1)
+      (leader 1 qset-1 T2 P1)
       2)))]
 
 @subsection{Computing a node's weight}
@@ -262,7 +262,7 @@ And we conclude with a few tests.
   (test-case
     "accepted-nominated?"
     (check-true
-      (check-success conf0 N1 P1))))]
+      (check-success conf0 T1 P1))))]
 
 @section{Auxiliary functions}
 
