@@ -3,6 +3,7 @@
 (provide
   node/c
   conf/c
+  conf-members
   (contract-out
     [struct qset
       ((threshold exact-positive-integer?)
@@ -27,7 +28,7 @@
 
 ; A quorum-set represents sets of sets of nodes using thresholds
 ; This is what is used on the wire in the Stellar network
-(define-struct qset (threshold validators inner-qsets) #:transparent)
+(define-struct qset (threshold validators inner-qsets) #:prefab)
 
 (define (qset-kw #:threshold t #:validators vs #:inner qs)
   (qset t vs qs))
@@ -184,8 +185,19 @@
     (check-true (sat? qset-6 (set 'A 'x 'z)))
     (check-false (sat? qset-6 (set 'A 'a 'y)))))
 
+
 (define conf/c
-  (hash/c node/c qset?))
+  (hash/c node/c qset? #:flat? #t #:immutable #t))
+
+(define (conf-members c)
+  (define keys
+    (list->set (hash-keys c)))
+  (define all-members
+    (apply
+      set-union
+      (for/list ([qset (hash-values c)])
+        (qset-members qset))))
+  all-members)
 
 (define/contract (quorum? conf q)
   (-> conf/c set? boolean?)
@@ -194,7 +206,7 @@
 
 (define (quorum?-2 conf q)
   (define expanded
-    (for/hash ([(k v) (in-hash conf)])
+    (for/hasheqv ([(k v) (in-hash conf)])
       (values k (expand v))))
   (for/and ([n q])
     (for/or ([s (hash-ref expanded n)])
@@ -204,6 +216,6 @@
   (define nodes
     (set->list (qset-members qset-6)))
   (define conf
-    (make-immutable-hash (map cons nodes (make-list 10 qset-6))))
+    (make-immutable-hasheqv (map cons nodes (make-list 10 qset-6))))
   (for ([q (map list->set (combinations nodes))])
     (check-equal? (quorum? conf q) (quorum?-2 conf q))))

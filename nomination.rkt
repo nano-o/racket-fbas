@@ -4,7 +4,8 @@
 (provide
   nomination-votes
   accepted-nominated?
-  weight)
+  weight
+  num-leaders)
 
 ; nomination protocol
 
@@ -115,6 +116,13 @@
           cdr
           priority))]))
 
+(define/contract (num-leaders conf N P)
+  (-> conf/c draw/c draw/c number?)
+  (for/fold ([num 0]) ([(n qset) (in-hash conf)])
+    (if (eqv? n (leader n qset N P))
+      (+ num 1)
+      num)))
+
 (module+ test
   (define P1 (make-immutable-hash '((1 . 0.1) (2 . 0.2) (3 . 0.3))))
   (test-case
@@ -131,9 +139,10 @@
 
 (define/contract (nomination-step conf N P s)
   (-> conf/c draw/c draw/c state/c state/c)
-  (for/hash ([(n v) (in-hash s)])
+  (for/hasheqv ([(n v) (in-hash s)])
     (cond
       [(not (equal? v #f)) (values n v)]
+      [(not (hash-has-key? conf n)) (values n v)]
       [else
         (define l (leader n (hash-ref conf n) N P))
         (cond
@@ -145,18 +154,20 @@
   (map cons l1 l2))
 
 (define (s-0 conf)
-  (make-immutable-hash
-    (zip (hash-keys conf) (make-list (hash-count conf) #f))))
+  (define members
+    (set->list (conf-members conf)))
+  (make-immutable-hasheqv
+    (zip members (make-list (length members) #f))))
 
 (module+ test
   (define conf0
-    (make-immutable-hash
+    (make-immutable-hasheqv
       (zip '(1 2 3) (make-list 3 qset-1))))
   (test-case
     "nomination-step"
     (check-equal?
       (nomination-step conf0 N1 P1 (s-0 conf0))
-      (make-immutable-hash '((1 . #f) (2 . #f) (3 . 3))))))
+      (make-immutable-hasheqv '((1 . #f) (2 . #f) (3 . 3))))))
 
 (define (until-fixpoint f)
   (define (fixpoint-f v)
@@ -175,7 +186,7 @@
     "nomination"
     (check-equal?
       (nomination-votes conf0 N1 P1)
-      (make-immutable-hash (zip (hash-keys conf0) (make-list 3 3))))))
+      (make-immutable-hasheqv (zip (hash-keys conf0) (make-list 3 3))))))
 
 ; Whether a value has been accepted as nominated at the end of the first round of nomination.
 (define/contract (accepted-nominated? conf s)

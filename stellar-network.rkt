@@ -45,7 +45,7 @@
   (define info
     (network-info stellarbeat-url-string))
   (define current-top-tier-org-names
-  '("Stellar Development Foundation" "Wirex Limited" "Public Node" "COINQVEST LLC" "SatoshiPay" "LOBSTR" "Blockdaemon Inc."))
+  '("Stellar Development Foundation" "Public Node" "COINQVEST LLC" "SatoshiPay" "LOBSTR" "Blockdaemon Inc." "Franklin Templeton"))
   (define current-top-tier-nodes
     (top-tier-nodes info current-top-tier-org-names))
   (for/hash ([n current-top-tier-nodes])
@@ -67,7 +67,7 @@
               (hash->qset q))))
 
 (define (hash->conf h)
-  (for/hash ([(n q) (in-hash h)])
+  (for/hasheqv ([(n q) (in-hash h)])
     (values (string->symbol n) (hash->qset q))))
 
 ; convert a qset to nested hashmaps

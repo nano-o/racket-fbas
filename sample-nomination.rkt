@@ -1,13 +1,15 @@
 #lang gamble
 
 (require
-  (only-in "qset.rkt" qset)
+  racket/pretty
+  racket/serialize
+  (only-in "qset.rkt" qset conf/c conf-members)
   "nomination.rkt"
   (submod "nomination.rkt" test)
   "stellar-network.rkt")
 
 (define (assign-random-vals conf)
-  (for/hash ([n (hash-keys conf)])
+  (for/hash ([n (conf-members conf)])
     (values n (sample (uniform-dist 0 1)))))
 
 (define (run-nomination conf)
@@ -24,17 +26,50 @@
     (accepted-nominated? conf s))
   accepted?)
 
-(define (my-sampler conf)
+(define (run-nomination-sampler conf)
   (rejection-sampler
     (run-nomination conf)))
 
 (define (get-distribution num-samples conf)
-  (sampler->discrete-dist (my-sampler conf) num-samples))
+  (sampler->discrete-dist (run-nomination-sampler conf) num-samples))
 
-; to get the current top-tier config:
-;(define stellar-conf (hash->conf (get-stellar-top-tier-qsets)))
-; to run the sampling:
-;(get-distribution 1000 stellar-conf)
+(define (run-num-leaders conf)
+  (define N
+    (assign-random-vals conf))
+  (define P
+    (assign-random-vals conf))
+  (num-leaders conf N P))
+
+(define (num-leaders-sampler conf)
+  (rejection-sampler
+    (run-num-leaders conf)))
+
+(define (get-num-leaders-distribution num-samples conf)
+  (sampler->discrete-dist (num-leaders-sampler conf) num-samples))
+
+(define (run)
+  ; to get the current top-tier config:
+  (define stellar-conf-top-tier (hash->conf (get-stellar-top-tier-qsets)))
+  ; to run the sampling:
+  (displayln "num leaders:")
+  (pretty-display
+    (get-num-leaders-distribution 10000 stellar-conf-top-tier))
+  (displayln "at least a quorum agrees on a leader:")
+  (pretty-display
+    (get-distribution 10000 stellar-conf-top-tier)))
+
+(define (run-with-conf-from-file f)
+  (with-input-from-file
+    f
+    (λ ()
+       (begin
+         (define conf (deserialize (read)))
+         (displayln "num leaders:")
+         (pretty-display
+           (get-num-leaders-distribution 10000 conf))
+         (displayln "at least a quorum agrees on a leader:")
+         (pretty-display
+           (get-distribution 10000 conf))))))
 
 (define stellar-conf-8-26-2022
   (hash
@@ -1165,3 +1200,6 @@
              GCIXVKNFPKWVMKJKVK2V4NK7D4TC6W3BUMXSIJ365QUAXWBRPPJXIR2Z
              GCVJ4Z6TI6Z2SOGENSPXDQ2U4RKH3CNQKYUHNSSPYFPNWTLGS6EBH7I2)
           '())))))
+
+; (require racket/pretty)
+; (pretty-display (get-num-leaders-distribution 10000 stellar-conf-8-26-2022))
