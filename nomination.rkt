@@ -12,9 +12,9 @@
 <check-success>
 <tests>]
 
-@(require scribble/eval)
-@(define my-eval (make-base-eval))
-@interaction-eval[#:eval my-eval (require racket "qset.rkt" (submod "qset.rkt" test))]
+@(require scribble/example racket/sandbox)
+@(define my-eval
+   (make-base-eval '(require racket "qset.rkt" (submod "qset.rkt" test))))
 
 @section{The high-level protocol}
 
@@ -104,10 +104,8 @@ always considers itself a neighbor.
 Note that the set of neighbors of a node n may consist of only n when every
 node has a threshold higher than its weight.
 
-A few basic tests, remembering that (TODO this is not an example) :
-@examples[
-    #:eval my-eval
-    qset-1]
+A few basic tests, remembering that:
+@examples[#:label #f #:eval my-eval qset-1]
 
 @chunk[<test-neighbors>
 (module+ test
@@ -188,8 +186,7 @@ Note that the code above only makes sense when a node appears in at most one
 element of a qset.
 
 Now a few tests, remembering that:
-@examples[
-    #:eval my-eval
+@examples[#:label #f #:eval my-eval
     qset-1
     qset-5
     qset-6

@@ -1,7 +1,7 @@
 #lang scribble/manual
 
 @(require
-   scribble/eval
+   scribble/example
    (for-label
      racket
      @; (only-in gamble rejection-sampler sampler->discrete-dist)
@@ -12,8 +12,7 @@
 
 Welcome to the documentation of the racket-fbas library.
 
-@(define my-eval (make-base-eval))
-@interaction-eval[#:eval my-eval (require racket "qset.rkt")]
+@(define my-eval (make-base-eval '(require racket "qset.rkt")))
 
 @section{Quorum sets}
 

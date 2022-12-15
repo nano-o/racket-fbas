@@ -12,9 +12,9 @@ a set of nodes is a quorum.
 The program consists of a set of exported bindings, a data structure to
 represent quorum sets, a function to compute the set of slices corresponding to
 a quorum set, the function @code{sat?}, which computes whether a set of nodes
-satisfies a quorum set, a notion of quorum system (or configuration) , the
-function @code{quorum?} cheks whether a set of nodes is a quorum in a quorum
-system, and some tests:
+satisfies a quorum set, a notion of quorum system (or configuration), the
+function @code{quorum?}, which cheks whether a set of nodes is a quorum in a
+quorum system, and some tests:
 
 @chunk[<qset-main>
 (require racket)
