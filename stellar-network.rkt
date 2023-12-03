@@ -35,7 +35,11 @@
       (hash-ref o 'validators))))
 
 (define (quorum-sets info)
-  (for/hash ([n (hash-ref info 'nodes)])
+  (for/hash ([n (hash-ref info 'nodes)]
+             #:when (and
+                      (hash-has-key? n 'publicKey)
+                      (hash-has-key? n 'quorumSet)
+                      (not (equal? (hash-ref n 'quorumSet) null))))
     (values (hash-ref n 'publicKey) (hash-ref n 'quorumSet))))
 
 (define stellarbeat-url-string
