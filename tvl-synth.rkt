@@ -4,6 +4,9 @@
 (require "tvl.rkt")
 (require rackunit)
 
+; TODO: Jamie writes that {f, or, not, and diamond} are a good candidate minimal set of connectives
+; TODO: Jamie says no natural construction of mimp from dimp and modalities
+
 (define-symbolic x y (bitvector 2))
 
 ; let's sythesize expressions
