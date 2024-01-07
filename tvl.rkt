@@ -2,6 +2,7 @@
 (require rosette/safe)
 (require (for-syntax racket/syntax))
 (require syntax/parse/define)
+(require (for-syntax syntax/to-string))
 
 (provide and/tvl or/tvl not/tvl equiv dimp mimp diff miff diamond box/tvl dbimp bv-to-3)
 
