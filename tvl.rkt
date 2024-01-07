@@ -3,11 +3,14 @@
 (require (for-syntax racket/syntax))
 (require syntax/parse/define)
 
-
 (provide and/tvl or/tvl not/tvl equiv dimp mimp diff miff diamond box/tvl dbimp bv-to-3)
 
 ;; We start by defining the truth tables
 ;; Our logical values are 't, 'b, and 'f
+
+; Something is valid if it's 't or 'b in all interpretations
+(define (designated-value v)
+  (member v '(t b)))
 
 ;; First we create a macro to make it easier to write down truth tables
 
@@ -20,32 +23,32 @@
   (syntax-parse stx
     [(_ operation:id
         [value:tvl-value ... result:tvl-value] ...)
-     #:do [(define list-of-lists
+     #:do [(define rows/datum
              (for/list ([l (syntax->list #'((value ...) ...))])
                (for/list ([e (syntax->list l)])
                  (syntax->datum e))))
            (define num-inputs
-             (length (car list-of-lists)))
+             (length (car rows/datum)))
            (define num-inputs-in-each-row
-             (for/and ([l list-of-lists])
+             (for/and ([l rows/datum])
                (equal? (length l) num-inputs)))
            (define combinations
              (apply cartesian-product
                     (make-list num-inputs '(t b f))))
            (define has-all-combinations
-             (set=? combinations list-of-lists))]
+             (set=? combinations rows/datum))]
      #:fail-when (not num-inputs-in-each-row) "some rows have different sizes"
-     #:fail-when (not has-all-combinations) (format "missing combinations of inputs: ~a" (set-subtract combinations list-of-lists))
+     #:fail-when (not has-all-combinations) (format "missing combinations of inputs: ~a" (set-subtract combinations rows/datum))
      (with-syntax
          ([(arg ...)
-            (for/list ([i (in-range num-inputs)])
-              (format-id #'operation "arg-~a" i))])
+           (for/list ([i (in-range num-inputs)])
+             (format-id #'operation "arg-~a" i))])
        #'(define (operation arg ...)
          (case (list arg ...)
            [((value ...)) (quote result)] ...
            [else 'error])))]))
 
-;; now we define the truth tables
+;; Now we define the truth tables
 
 (define-truth-table and/tvl
   [t t t]
@@ -154,126 +157,160 @@
   [b t]
   [f f])
 
-;; we use 2 bits to represent a value in our logic:
+;; Now we define a series of equivalences taken from the book
+
+(define (mimp-is-not-a-or-b a b)
+  (eq?
+    (mimp a b)
+    (or/tvl (not/tvl a) b)))
+
+(define (dimp-using-mimp a b)
+  (eq?
+    (dimp a b)
+    (mimp (diamond a) b)))
+
+;; We now verify those equivalences using Rosette
+
+; we use 2 bits to represent a tvl value as a bitvector:
 (define (bv-to-3 b)
   (cond
     [(bveq b (bv #b10 2)) 't] ; #b10 is 't
     [(or (bveq b (bv #b00 2)) (bveq b (bv #b11 2))) 'b] ; #b11 and #b00 both represent 'b
     [(bveq b (bv #b01 2)) 'f])) ; #b01 is 'f
 
-(define (designated-value v)
-  (member v '(t b)))
-
 (module+ test
   (require rackunit)
 
-  (define-symbolic x y (bitvector 2))
-  (define vx (bv-to-3 x))
-  (define vy (bv-to-3 y))
+  ;; first we define a macro to simplify writing checks
 
-  ; TODO: macro for this stuff?
+  (define-syntax-parser check
+    [(_ (eq-to-check:id arg ...))
+     (with-syntax
+       ([(arg/bv ...)
+         (for/list ([arg (syntax->list #'(arg ...))])
+           (format-id #'eq-to-check "~a/bv" (syntax->datum arg)))])
+       #`(let () ; we use let to hide the following definitions from the outer scope
+           (define-symbolic arg/bv ... (bitvector 2))
+           (define arg (bv-to-3 arg/bv)) ...
+           (check-true
+             (unsat?
+               (verify
+                 (assert
+                   (eq-to-check arg ...)))))))])
 
-  (define (check-mimp a b)
-    (assert
-      (eq?
-        (mimp a b)
-        (or/tvl (not/tvl a) b))))
+  ;; now the checks
 
-  (check-true
-    (unsat?
-      (verify (check-mimp vx vy))))
+  (check (mimp-is-not-a-or-b a b))
+  (check (dimp-using-mimp a b)))
 
-  (define (check-dimp a b)
-    (assert
-      (eq?
-        (dimp a b)
-        (mimp (diamond a) b))))
 
-  (check-true
-    (unsat?
-      (verify (check-dimp vx vy))))
+; (module+ test
 
-  (define (check-miff a b)
-    (assert
-      (eq?
-        (miff a b)
-        (and/tvl (mimp a b) (mimp b a)))))
+  ; (define-symbolic x y (bitvector 2))
+  ; (define vx (bv-to-3 x))
+  ; (define vy (bv-to-3 y))
 
-  (check-true
-    (unsat?
-      (verify (check-miff vx vy))))
+  ; ; TODO: macro for this stuff?
 
-  (define (check-8.2.3.6 p q)
-    ; this Item 6 of Remark 8.2.3 in three.pdf
-    (assert
-      (eq?
-        (diamond (dimp p q))
-        (dimp (diamond p) (diamond q)))))
+  ; (define (check-mimp a b)
+    ; (assert
+      ; (mimp-is-not-a-or-b a b)))
 
-  (check-true
-    (unsat?
-      (verify (check-8.2.3.6 vx vy))))
+  ; (check-true
+    ; (unsat?
+      ; (verify (check-mimp vx vy))))
 
-  (define (check-8.2.7.1 x y)
-    (assert
-      (eq?
-        (mimp x y)
-        (mimp (not/tvl y) (not/tvl x)))))
+  ; (define (check-dimp a b)
+    ; (assert
+      ; (eq?
+        ; (dimp a b)
+        ; (mimp (diamond a) b))))
 
-  (check-true
-    (unsat?
-      (verify (check-8.2.7.1 vx vy))))
+  ; (check-true
+    ; (unsat?
+      ; (verify (check-dimp vx vy))))
 
-  (define (check-8.2.7.2 x y)
-    (assert
-      (eq?
-        (dimp x y)
-        (dimp (not/tvl y) (not/tvl x)))))
+  ; (define (check-miff a b)
+    ; (assert
+      ; (eq?
+        ; (miff a b)
+        ; (and/tvl (mimp a b) (mimp b a)))))
 
-  (check-true
-    (sat?
-      (verify (check-8.2.7.2 vx vy))))
+  ; (check-true
+    ; (unsat?
+      ; (verify (check-miff vx vy))))
 
-  ; with 3 variables
+  ; (define (check-8.2.3.6 p q)
+    ; ; this Item 6 of Remark 8.2.3 in three.pdf
+    ; (assert
+      ; (eq?
+        ; (diamond (dimp p q))
+        ; (dimp (diamond p) (diamond q)))))
 
-  (define-symbolic bvp bvq bvr (bitvector 2))
-  (define p (bv-to-3 bvp))
-  (define q (bv-to-3 bvq))
-  (define r (bv-to-3 bvr))
+  ; (check-true
+    ; (unsat?
+      ; (verify (check-8.2.3.6 vx vy))))
 
-  ; modus-ponens
+  ; (define (check-8.2.7.1 x y)
+    ; (assert
+      ; (eq?
+        ; (mimp x y)
+        ; (mimp (not/tvl y) (not/tvl x)))))
 
-  (define (modus-ponens p q r)
-    ; TODO is this modus-ponens?
-    (eq?
-      (designated-value (dimp (and/tvl p q) r))
-      (designated-value (dimp p (dimp q r)))))
+  ; (check-true
+    ; (unsat?
+      ; (verify (check-8.2.7.1 vx vy))))
 
-  (check-true
-    (unsat?
-      (verify
-        (assert (modus-ponens p q r)))))
+  ; (define (check-8.2.7.2 x y)
+    ; (assert
+      ; (eq?
+        ; (dimp x y)
+        ; (dimp (not/tvl y) (not/tvl x)))))
 
-  (define (check-8.4.12.1 p q r)
-    (assert
-      (eq?
-        (mimp (and/tvl p q) r)
-        (mimp p (mimp q r)))))
+  ; (check-true
+    ; (sat?
+      ; (verify (check-8.2.7.2 vx vy))))
 
-  (check-true
-    (unsat?
-      (verify
-        (check-8.4.12.1 p q r))))
+  ; ; with 3 variables
 
-  (define (check-8.4.12.2 p q r)
-    (assert
-      (eq?
-        (dimp (and/tvl p q) r)
-        (dimp p (dimp q r)))))
+  ; (define-symbolic bvp bvq bvr (bitvector 2))
+  ; (define p (bv-to-3 bvp))
+  ; (define q (bv-to-3 bvq))
+  ; (define r (bv-to-3 bvr))
 
-  (check-true
-    (unsat?
-      (verify
-        (check-8.4.12.2 p q r)))) )
+  ; ; modus-ponens
+
+  ; (define (modus-ponens p q r)
+    ; ; TODO is this modus-ponens?
+    ; (eq?
+      ; (designated-value (dimp (and/tvl p q) r))
+      ; (designated-value (dimp p (dimp q r)))))
+
+  ; (check-true
+    ; (unsat?
+      ; (verify
+        ; (assert (modus-ponens p q r)))))
+
+  ; (define (check-8.4.12.1 p q r)
+    ; (assert
+      ; (eq?
+        ; (mimp (and/tvl p q) r)
+        ; (mimp p (mimp q r)))))
+
+  ; (check-true
+    ; (unsat?
+      ; (verify
+        ; (check-8.4.12.1 p q r))))
+
+  ; (define (check-8.4.12.2 p q r)
+    ; (assert
+      ; (eq?
+        ; (dimp (and/tvl p q) r)
+        ; (dimp p (dimp q r)))))
+
+  ; (check-true
+    ; (unsat?
+      ; (verify
+        ; (check-8.4.12.2 p q r)))) )
 
 
