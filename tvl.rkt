@@ -157,160 +157,106 @@
   [b t]
   [f f])
 
+(define-truth-table B
+  [t f]
+  [b t]
+  [f f])
+
 ;; Now we define a series of equivalences taken from the book
 
-(define (mimp-is-not-a-or-b a b)
-  (eq?
-    (mimp a b)
-    (or/tvl (not/tvl a) b)))
+;; We define a macro to define and check an equivalence at once
 
-(define (dimp-using-mimp a b)
-  (eq?
-    (dimp a b)
-    (mimp (diamond a) b)))
+; We create the test module
+(module+ test
+  (require rackunit))
 
-;; We now verify those equivalences using Rosette
-
-; we use 2 bits to represent a tvl value as a bitvector:
+; we use 2 bits to represent a tvl value as a bitvector
 (define (bv-to-3 b)
   (cond
     [(bveq b (bv #b10 2)) 't] ; #b10 is 't
     [(or (bveq b (bv #b00 2)) (bveq b (bv #b11 2))) 'b] ; #b11 and #b00 both represent 'b
     [(bveq b (bv #b01 2)) 'f])) ; #b01 is 'f
 
-(module+ test
-  (require rackunit)
-
-  ;; first we define a macro to simplify writing checks
-
-  (define-syntax-parser check
-    [(_ (eq-to-check:id arg ...))
-     (with-syntax
-       ([(arg/bv ...)
-         (for/list ([arg (syntax->list #'(arg ...))])
-           (format-id #'eq-to-check "~a/bv" (syntax->datum arg)))])
-       #`(let () ; we use let to hide the following definitions from the outer scope
+(define-syntax-parser define-and-check
+  [(_ (eq-to-check:id arg ...) body:expr)
+   (with-syntax
+     ([(arg/bv ...)
+       (for/list ([arg (syntax->list #'(arg ...))])
+         (format-id #'eq-to-check "~a/bv" (syntax->datum arg)))])
+       #`(module+ test
+         (define (eq-to-check arg ...) body)
+         (let () ; we use let to hide the following definitions from the outer scope
            (define-symbolic arg/bv ... (bitvector 2))
            (define arg (bv-to-3 arg/bv)) ...
-           (check-true
-             (unsat?
-               (verify
-                 (assert
-                   (eq-to-check arg ...)))))))])
+           (define result
+             (verify
+               (assert
+                 (eq-to-check arg ...))))
+           (define cex
+             (begin
+               (if (sat? result)
+                 (for/hash ([(k v) (in-hash (model result))])
+                   (values k (bv-to-3 v)))
+                 #f)))
+           (define msg
+             (if (sat? result)
+               (format
+                 #,(format "(~a does not hold. ~~a falsifies (~a))" (syntax->string #'(eq-to-check)) (syntax->string #'body))
+                 cex)
+               #f))
+           (check-true (unsat? result) msg))))])
 
-  ;; now the checks
+;; Figure 25
 
-  (check (mimp-is-not-a-or-b a b))
-  (check (dimp-using-mimp a b)))
+;; TODO: a reader to read in equations formatted as in the book?
 
+(define-and-check (eq-25.1 p)
+  (eq? (not/tvl (not/tvl p)) p))
 
-; (module+ test
+(define-and-check (eq-25.2 p q)
+  (eq? (or/tvl p q) (not/tvl (and/tvl (not/tvl p) (not/tvl q)))))
 
-  ; (define-symbolic x y (bitvector 2))
-  ; (define vx (bv-to-3 x))
-  ; (define vy (bv-to-3 y))
+(define-and-check (eq-25.3 p q)
+  (eq? (and/tvl p q) (not/tvl (or/tvl (not/tvl p) (not/tvl q)))))
 
-  ; ; TODO: macro for this stuff?
+(define-and-check (eq-25.4 a b)
+  (eq? (mimp a b) (or/tvl (not/tvl a) b)))
 
-  ; (define (check-mimp a b)
-    ; (assert
-      ; (mimp-is-not-a-or-b a b)))
+(define-and-check (eq-25.5 p)
+  (eq? (mimp p 'f) (not/tvl p)))
 
-  ; (check-true
-    ; (unsat?
-      ; (verify (check-mimp vx vy))))
+(define-and-check (eq-25.6 p q)
+  (eq? (miff p q) (and/tvl (mimp p q) (mimp q p))))
 
-  ; (define (check-dimp a b)
-    ; (assert
-      ; (eq?
-        ; (dimp a b)
-        ; (mimp (diamond a) b))))
+(define-and-check (eq-25.7.1 p q)
+  (eq? (dimp p q) (mimp (diamond p) q)))
+(define-and-check (eq-25.7.2 p q)
+  (eq? (dimp p q) (or/tvl (box/tvl (not/tvl p)) q)))
 
-  ; (check-true
-    ; (unsat?
-      ; (verify (check-dimp vx vy))))
+(define-and-check (eq-25.8 p q)
+  (eq? (diff p q) (and/tvl (dimp p q) (dimp q p))))
 
-  ; (define (check-miff a b)
-    ; (assert
-      ; (eq?
-        ; (miff a b)
-        ; (and/tvl (mimp a b) (mimp b a)))))
+(define-and-check (eq-25.9.1 p)
+  (eq? (box/tvl p) (not/tvl (diamond (not/tvl p)))))
+(define-and-check (eq-25.9.2 p)
+  (eq? (box/tvl p) (dimp (not/tvl p) 'f)))
 
-  ; (check-true
-    ; (unsat?
-      ; (verify (check-miff vx vy))))
+(define-and-check (eq-25.10.1 p)
+  (eq? (diamond p) (not/tvl (box/tvl (not/tvl p)))))
+(define-and-check (eq-25.10.2 p)
+  (eq? (diamond p) (not/tvl (dimp p 'f))))
+(define-and-check (eq-25.10.3 p)
+  (eq? (diamond p) (dimp (dimp p 'f) 'f)))
 
-  ; (define (check-8.2.3.6 p q)
-    ; ; this Item 6 of Remark 8.2.3 in three.pdf
-    ; (assert
-      ; (eq?
-        ; (diamond (dimp p q))
-        ; (dimp (diamond p) (diamond q)))))
+(define-and-check (eq-25.11.1 p)
+  (eq? (B p) (diamond (and/tvl p (not/tvl p)))))
+(define-and-check (eq-25.11.2 p)
+  (eq? (B p) (and/tvl (diamond p) (diamond (not/tvl p)))))
+(define-and-check (eq-25.11.3 p)
+  (eq? (B p) (and/tvl (diamond p) (not/tvl (box/tvl p)))))
 
-  ; (check-true
-    ; (unsat?
-      ; (verify (check-8.2.3.6 vx vy))))
+(define-and-check (eq-25.12 p)
+  (eq? (box/tvl (diamond p)) (diamond p)))
 
-  ; (define (check-8.2.7.1 x y)
-    ; (assert
-      ; (eq?
-        ; (mimp x y)
-        ; (mimp (not/tvl y) (not/tvl x)))))
-
-  ; (check-true
-    ; (unsat?
-      ; (verify (check-8.2.7.1 vx vy))))
-
-  ; (define (check-8.2.7.2 x y)
-    ; (assert
-      ; (eq?
-        ; (dimp x y)
-        ; (dimp (not/tvl y) (not/tvl x)))))
-
-  ; (check-true
-    ; (sat?
-      ; (verify (check-8.2.7.2 vx vy))))
-
-  ; ; with 3 variables
-
-  ; (define-symbolic bvp bvq bvr (bitvector 2))
-  ; (define p (bv-to-3 bvp))
-  ; (define q (bv-to-3 bvq))
-  ; (define r (bv-to-3 bvr))
-
-  ; ; modus-ponens
-
-  ; (define (modus-ponens p q r)
-    ; ; TODO is this modus-ponens?
-    ; (eq?
-      ; (designated-value (dimp (and/tvl p q) r))
-      ; (designated-value (dimp p (dimp q r)))))
-
-  ; (check-true
-    ; (unsat?
-      ; (verify
-        ; (assert (modus-ponens p q r)))))
-
-  ; (define (check-8.4.12.1 p q r)
-    ; (assert
-      ; (eq?
-        ; (mimp (and/tvl p q) r)
-        ; (mimp p (mimp q r)))))
-
-  ; (check-true
-    ; (unsat?
-      ; (verify
-        ; (check-8.4.12.1 p q r))))
-
-  ; (define (check-8.4.12.2 p q r)
-    ; (assert
-      ; (eq?
-        ; (dimp (and/tvl p q) r)
-        ; (dimp p (dimp q r)))))
-
-  ; (check-true
-    ; (unsat?
-      ; (verify
-        ; (check-8.4.12.2 p q r)))) )
-
-
+(define-and-check (eq-25.13 p q)
+  (eq? (diamond (dimp p q)) (dimp (diamond p) (diamond q))))
