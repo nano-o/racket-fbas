@@ -1,10 +1,13 @@
-#lang racket/base
+#lang sweet-exp racket/base
 (require rosette/safe)
 (require (for-syntax racket/syntax))
 (require syntax/parse/define)
 (require (for-syntax syntax/to-string))
 
-(provide and/tvl or/tvl not/tvl equiv dimp mimp diff miff diamond box/tvl dbimp bv-to-3)
+(provide
+  bv-to-3
+  and/tvl or/tvl not/tvl dimp mimp diff miff diamond box/tvl
+  ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □)
 
 ;; We start by defining the truth tables
 ;; Our logical values are 't, 'b, and 'f
@@ -62,6 +65,8 @@
   [f b f]
   [f f f])
 
+(define ∧ and/tvl)
+
 (define-truth-table or/tvl
   [t t t]
   [t b t]
@@ -72,6 +77,8 @@
   [f t t]
   [f b b]
   [f f f])
+
+(define ∨ or/tvl)
 
 (define-truth-table dimp
   ; this is ⇒
@@ -85,6 +92,8 @@
   [f t t]
   [f f t])
 
+(define ⇒ dimp)
+
 (define-truth-table mimp
   ; this is ⊃, i.e. material implication
   [t t t]
@@ -96,6 +105,8 @@
   [f t t]
   [f b t]
   [f f t])
+
+(define ⊃ mimp)
 
 (define-truth-table diff ; double equivalence
   ; this is ⇔
@@ -109,6 +120,8 @@
   [f b f]
   [f f t])
 
+(define ⇔ diff)
+
 (define-truth-table miff ; equivalence using material implication
   ; this is ≡
   [t t t]
@@ -121,42 +134,28 @@
   [f b b]
   [f f t])
 
-(define-truth-table dbimp ; double overbar implication
-  [t t t]
-  [t b f]
-  [t f f]
-  [b t t]
-  [b b t]
-  [b f f]
-  [f t t]
-  [f b t]
-  [f f t])
-
-(define-truth-table equiv
-  [t t t]
-  [t b f]
-  [t f f]
-  [b t f]
-  [b b t]
-  [b f f]
-  [f t f]
-  [f b f]
-  [f f t])
+(define ≡ miff)
 
 (define-truth-table not/tvl
   [t f]
   [b b]
   [f t])
 
+(define ¬ not/tvl)
+
 (define-truth-table box/tvl
   [t t]
   [b f]
   [f f])
 
+(define □ box/tvl)
+
 (define-truth-table diamond
   [t t]
   [b t]
   [f f])
+
+(define ◇ diamond)
 
 (define-truth-table B
   [t f]
@@ -165,7 +164,7 @@
 
 ;; Now we define a series of equivalences taken from the book
 
-;; We define a macro to define and check an equivalence at once
+;; We first define a macro to define and check an equivalence at once
 
 ; We create the test module
 (module+ test
@@ -174,12 +173,13 @@
 ; we use 2 bits to represent a tvl value as a bitvector
 (define (bv-to-3 b)
   (cond
-    [(bveq b (bv #b10 2)) 't] ; #b10 is 't
-    [(or (bveq b (bv #b00 2)) (bveq b (bv #b11 2))) 'b] ; #b11 and #b00 both represent 'b
-    [(bveq b (bv #b01 2)) 'f])) ; #b01 is 'f
+    [(bveq b (bv #b11 2)) 't] ; #b11 is 't
+    [(or (bveq b (bv #b01 2)) (bveq b (bv #b10 2))) 'b] ; #b01 and #b10 both represent 'b
+    [(bveq b (bv #b00 2)) 'f])) ; #b00 is 'f
 
 (define-syntax-parser define-and-check
   [(_ (eq-to-check:id arg ...) body:expr)
+   ; TODO check that the body is a tvl expression
    (with-syntax
      ([(arg/bv ...)
        (for/list ([arg (syntax->list #'(arg ...))])
@@ -196,68 +196,132 @@
            (define cex
              (begin
                (if (sat? result)
-                 (for/hash ([(k v) (in-hash (model result))])
-                   (values k (bv-to-3 v)))
+                 (model result)
                  #f)))
            (define msg
              (if (sat? result)
                (format
-                 #,(format "(~a does not hold. ~~a falsifies (~a))" (syntax->string #'(eq-to-check)) (syntax->string #'body))
+                 #,(format "~a is made false by the valuation ~~a" (syntax->string #'(eq-to-check)))
                  cex)
                #f))
            (check-true (unsat? result) msg))))])
 
 ;; Figure 25
 
-;; TODO: a reader to read in equations formatted as in the book?
+; note that, below, using curly braces instead of parentheses enable infix syntax
 
 (define-and-check (eq-25.1 p)
-  (eq? (not/tvl (not/tvl p)) p))
+  (eq?
+    (¬ (¬ p))
+    p))
 
 (define-and-check (eq-25.2 p q)
-  (eq? (or/tvl p q) (not/tvl (and/tvl (not/tvl p) (not/tvl q)))))
+  (eq?
+    {p ∨ q}
+    (¬ {(¬ p) ∧ (¬ q)})))
 
 (define-and-check (eq-25.3 p q)
-  (eq? (and/tvl p q) (not/tvl (or/tvl (not/tvl p) (not/tvl q)))))
+  (eq?
+    {p ∧ q}
+    (¬ {(¬ p) ∨ (¬ q)})))
 
 (define-and-check (eq-25.4 a b)
-  (eq? (mimp a b) (or/tvl (not/tvl a) b)))
+  (eq?
+    {a ⊃ b}
+    {(¬ a) ∨ b}))
 
 (define-and-check (eq-25.5 p)
-  (eq? (mimp p 'f) (not/tvl p)))
+  (eq?
+    {p ⊃ 'f}
+    (¬ p)))
 
 (define-and-check (eq-25.6 p q)
-  (eq? (miff p q) (and/tvl (mimp p q) (mimp q p))))
+  (eq?
+    {p ≡ q}
+    {{p ⊃ q} ∧ {q ⊃ p}}))
 
 (define-and-check (eq-25.7.1 p q)
-  (eq? (dimp p q) (mimp (diamond p) q)))
+  (eq?
+    {p ⇒ q}
+    {(◇ p) ⊃ q}))
 (define-and-check (eq-25.7.2 p q)
-  (eq? (dimp p q) (or/tvl (box/tvl (not/tvl p)) q)))
+  (eq?
+    {p ⇒ q}
+    {(□ (¬ p)) ∨ q}))
 
 (define-and-check (eq-25.8 p q)
-  (eq? (diff p q) (and/tvl (dimp p q) (dimp q p))))
+  (eq?
+    {p ⇔ q}
+    {{p ⇒ q} ∧ {q ⇒ p}}))
 
 (define-and-check (eq-25.9.1 p)
-  (eq? (box/tvl p) (not/tvl (diamond (not/tvl p)))))
+  (eq?
+    (□ p)
+    (¬ (◇ (¬ p)))))
 (define-and-check (eq-25.9.2 p)
-  (eq? (box/tvl p) (dimp (not/tvl p) 'f)))
+  (eq?
+    (□ p)
+    {(¬ p) ⇒ 'f}))
 
 (define-and-check (eq-25.10.1 p)
-  (eq? (diamond p) (not/tvl (box/tvl (not/tvl p)))))
+  (eq?
+    (◇ p)
+    (¬ (□ (¬ p)))))
 (define-and-check (eq-25.10.2 p)
-  (eq? (diamond p) (not/tvl (dimp p 'f))))
+  (eq?
+    (◇ p)
+    (¬ {p ⇒ 'f})))
 (define-and-check (eq-25.10.3 p)
-  (eq? (diamond p) (dimp (dimp p 'f) 'f)))
+  (eq?
+    (◇ p)
+    {{p ⇒ 'f} ⇒ 'f}))
 
 (define-and-check (eq-25.11.1 p)
-  (eq? (B p) (diamond (and/tvl p (not/tvl p)))))
+  (eq?
+    (B p)
+    (◇ {p ∧ (¬ p)})))
 (define-and-check (eq-25.11.2 p)
-  (eq? (B p) (and/tvl (diamond p) (diamond (not/tvl p)))))
+  (eq?
+    (B p)
+    {(◇ p) ∧ (◇ (¬ p))}))
 (define-and-check (eq-25.11.3 p)
-  (eq? (B p) (and/tvl (diamond p) (not/tvl (box/tvl p)))))
+  (eq?
+    (B p)
+    {(◇ p) ∧ (¬ (□ p))}))
 
 (define-and-check (eq-25.12 p)
-  (eq? (box/tvl (diamond p)) (diamond p)))
+  (eq?
+    (□ (◇ p))
+    (◇ p)))
 
 (define-and-check (eq-25.13 p q)
-  (eq? (diamond (dimp p q)) (dimp (diamond p) (diamond q))))
+  (eq?
+    (◇ {p ⇒ q})
+    {(◇ p) ⇒ (◇ q)}))
+
+(define-and-check (eq-25.13.1 p q)
+  (eq?
+    (□ {p ∧ q})
+    {(□ p) ∧ (□ q)}))
+(define-and-check (eq-25.13.2 p q)
+  (eq?
+    (□ (∨ p q))
+    {(□ p) ∨ (□ q)}))
+(define-and-check (eq-25.13.3 p q)
+  (eq?
+    (◇ {p ∧ q})
+    {(◇ p) ∧ (◇ q)}))
+(define-and-check (eq-25.13.4 p q)
+  (eq?
+    (◇ {p ∨ q})
+    {(◇ p) ∨ (◇ q)}))
+
+(define-and-check (eq-19.2.7.1 p q)
+  (eq?
+    {p ⊃ q}
+    {(not/tvl q) ⊃ (not/tvl p)}))
+
+; TODO check 19.2.7.2 is SAT
+
+; TODO 19.4.12
+; TODO 19.4.13
