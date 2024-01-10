@@ -1,20 +1,18 @@
 #lang sweet-exp racket/base
-(require rosette/safe)
-(require (for-syntax racket/syntax))
-(require syntax/parse/define)
-(require (for-syntax syntax/to-string))
+(require rosette/safe
+         rosette/lib/synthax
+         syntax/parse/define)
+(require
+  (for-syntax
+    racket/syntax
+    syntax/to-string))
 
 (provide
   bv-to-3
-  and/tvl or/tvl not/tvl dimp mimp diff miff diamond box/tvl
   ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □)
 
 ;; We start by defining the truth tables
 ;; Our logical values are 't, 'b, and 'f
-
-; Something is valid if it's 't or 'b in all interpretations
-(define (designated-value v)
-  (member v '(t b)))
 
 ;; First we create a macro to make it easier to write down truth tables
 
@@ -54,7 +52,7 @@
 
 ;; Now we define the truth tables
 
-(define-truth-table and/tvl
+(define-truth-table ∧
   [t t t]
   [t b b]
   [t f f]
@@ -65,9 +63,7 @@
   [f b f]
   [f f f])
 
-(define ∧ and/tvl)
-
-(define-truth-table or/tvl
+(define-truth-table ∨
   [t t t]
   [t b t]
   [t f t]
@@ -78,10 +74,7 @@
   [f b b]
   [f f f])
 
-(define ∨ or/tvl)
-
-(define-truth-table dimp
-  ; this is ⇒
+(define-truth-table ⇒
   [t t t]
   [t b b]
   [t f f]
@@ -92,10 +85,7 @@
   [f t t]
   [f f t])
 
-(define ⇒ dimp)
-
-(define-truth-table mimp
-  ; this is ⊃, i.e. material implication
+(define-truth-table ⊃ ; material implication
   [t t t]
   [t b b]
   [t f f]
@@ -106,10 +96,7 @@
   [f b t]
   [f f t])
 
-(define ⊃ mimp)
-
-(define-truth-table diff ; double equivalence
-  ; this is ⇔
+(define-truth-table ⇔
   [t t t]
   [t b b]
   [t f f]
@@ -120,10 +107,7 @@
   [f b f]
   [f f t])
 
-(define ⇔ diff)
-
-(define-truth-table miff ; equivalence using material implication
-  ; this is ≡
+(define-truth-table ≡ ; equivalence based on material implication
   [t t t]
   [t b b]
   [t f f]
@@ -134,28 +118,20 @@
   [f b b]
   [f f t])
 
-(define ≡ miff)
-
-(define-truth-table not/tvl
+(define-truth-table ¬
   [t f]
   [b b]
   [f t])
 
-(define ¬ not/tvl)
-
-(define-truth-table box/tvl
+(define-truth-table □
   [t t]
   [b f]
   [f f])
 
-(define □ box/tvl)
-
-(define-truth-table diamond
+(define-truth-table ◇
   [t t]
   [b t]
   [f f])
-
-(define ◇ diamond)
 
 (define-truth-table B
   [t f]
@@ -177,16 +153,15 @@
     [(or (bveq b (bv #b01 2)) (bveq b (bv #b10 2))) 'b] ; #b01 and #b10 both represent 'b
     [(bveq b (bv #b00 2)) 'f])) ; #b00 is 'f
 
-(define-syntax-parser define-and-check
-  [(_ (eq-to-check:id arg ...) body:expr)
-   ; TODO check that the body is a tvl expression
+(define-syntax-parser check-equivalence
+  [(_ (eq-to-check:id arg ...) lhs:expr rhs:expr)
    (with-syntax
-     ([(arg/bv ...)
+     ([(arg/bv ...) ; symbols for symbolic variables
        (for/list ([arg (syntax->list #'(arg ...))])
          (format-id #'eq-to-check "~a/bv" (syntax->datum arg)))])
        #`(module+ test
-         (define (eq-to-check arg ...) body)
          (let () ; we use let to hide the following definitions from the outer scope
+           (define (eq-to-check arg ...) (eq? lhs rhs))
            (define-symbolic arg/bv ... (bitvector 2))
            (define arg (bv-to-3 arg/bv)) ...
            (define result
@@ -201,127 +176,132 @@
            (define msg
              (if (sat? result)
                (format
-                 #,(format "~a is made false by the valuation ~~a" (syntax->string #'(eq-to-check)))
+                 #,(format "~a is falsified by the valuation ~~a" (syntax->string #'(eq-to-check)))
                  cex)
                #f))
            (check-true (unsat? result) msg))))])
 
-;; Figure 25
+;; Figure 18.3
 
 ; note that, below, using curly braces instead of parentheses enable infix syntax
 
-(define-and-check (eq-25.1 p)
-  (eq?
+(check-equivalence (eq-18.3.1 p)
     (¬ (¬ p))
-    p))
+    p)
 
-(define-and-check (eq-25.2 p q)
-  (eq?
+(check-equivalence (eq-18.3.2 p q)
     {p ∨ q}
-    (¬ {(¬ p) ∧ (¬ q)})))
+    (¬ {(¬ p) ∧ (¬ q)}))
 
-(define-and-check (eq-25.3 p q)
-  (eq?
+(check-equivalence (eq-18.3.3 p q)
     {p ∧ q}
-    (¬ {(¬ p) ∨ (¬ q)})))
+    (¬ {(¬ p) ∨ (¬ q)}))
 
-(define-and-check (eq-25.4 a b)
-  (eq?
+(check-equivalence (eq-18.3.4 a b)
     {a ⊃ b}
-    {(¬ a) ∨ b}))
+    {(¬ a) ∨ b})
 
-(define-and-check (eq-25.5 p)
-  (eq?
+(check-equivalence (eq-18.3.5 p)
     {p ⊃ 'f}
-    (¬ p)))
+    (¬ p))
 
-(define-and-check (eq-25.6 p q)
-  (eq?
+(check-equivalence (eq-18.3.6.1 p q)
     {p ≡ q}
-    {{p ⊃ q} ∧ {q ⊃ p}}))
+    {{p ⊃ q} ∧ {q ⊃ p}})
+(check-equivalence (eq-18.3.6.2 p q)
+    {p ≡ q}
+    {{(¬ p) ∨ q} ∧ {p ∨ (¬ q)}})
 
-(define-and-check (eq-25.7.1 p q)
-  (eq?
+(check-equivalence (eq-18.3.7.1 p q)
     {p ⇒ q}
-    {(◇ p) ⊃ q}))
-(define-and-check (eq-25.7.2 p q)
-  (eq?
+    {(◇ p) ⊃ q})
+(check-equivalence (eq-18.3.7.2 p q)
     {p ⇒ q}
-    {(□ (¬ p)) ∨ q}))
+    {(□ (¬ p)) ∨ q})
 
-(define-and-check (eq-25.8 p q)
-  (eq?
+(check-equivalence (eq-18.3.8 p q)
     {p ⇔ q}
-    {{p ⇒ q} ∧ {q ⇒ p}}))
+    {{p ⇒ q} ∧ {q ⇒ p}})
 
-(define-and-check (eq-25.9.1 p)
-  (eq?
+(check-equivalence (eq-18.3.9.1 p)
     (□ p)
-    (¬ (◇ (¬ p)))))
-(define-and-check (eq-25.9.2 p)
-  (eq?
+    (¬ (◇ (¬ p))))
+(check-equivalence (eq-18.3.9.2 p)
     (□ p)
-    {(¬ p) ⇒ 'f}))
+    {(¬ p) ⇒ 'f})
 
-(define-and-check (eq-25.10.1 p)
-  (eq?
+(check-equivalence (eq-18.3.10.1 p)
     (◇ p)
-    (¬ (□ (¬ p)))))
-(define-and-check (eq-25.10.2 p)
-  (eq?
+    (¬ (□ (¬ p))))
+(check-equivalence (eq-18.3.10.2 p)
     (◇ p)
-    (¬ {p ⇒ 'f})))
-(define-and-check (eq-25.10.3 p)
-  (eq?
+    (¬ {p ⇒ 'f}))
+(check-equivalence (eq-18.3.10.3 p)
     (◇ p)
-    {{p ⇒ 'f} ⇒ 'f}))
+    {{p ⇒ 'f} ⇒ 'f})
 
-(define-and-check (eq-25.11.1 p)
-  (eq?
+(check-equivalence (eq-18.3.11.1 p)
     (B p)
-    (◇ {p ∧ (¬ p)})))
-(define-and-check (eq-25.11.2 p)
-  (eq?
+    (◇ {p ∧ (¬ p)}))
+(check-equivalence (eq-18.3.11.2 p)
     (B p)
-    {(◇ p) ∧ (◇ (¬ p))}))
-(define-and-check (eq-25.11.3 p)
-  (eq?
+    {(◇ p) ∧ (◇ (¬ p))})
+(check-equivalence (eq-18.3.11.3 p)
     (B p)
-    {(◇ p) ∧ (¬ (□ p))}))
+    {(◇ p) ∧ (¬ (□ p))})
 
-(define-and-check (eq-25.12 p)
-  (eq?
+(check-equivalence (eq-18.3.12 p)
     (□ (◇ p))
-    (◇ p)))
+    (◇ p))
 
-(define-and-check (eq-25.13 p q)
-  (eq?
+(check-equivalence (eq-18.3.13 p q)
     (◇ {p ⇒ q})
-    {(◇ p) ⇒ (◇ q)}))
+    {(◇ p) ⇒ (◇ q)})
 
-(define-and-check (eq-25.13.1 p q)
-  (eq?
+(check-equivalence (eq-18.3.13.1 p q)
     (□ {p ∧ q})
-    {(□ p) ∧ (□ q)}))
-(define-and-check (eq-25.13.2 p q)
-  (eq?
+    {(□ p) ∧ (□ q)})
+(check-equivalence (eq-18.3.13.2 p q)
     (□ {p ∨ q})
-    {(□ p) ∨ (□ q)}))
-(define-and-check (eq-25.13.3 p q)
-  (eq?
+    {(□ p) ∨ (□ q)})
+(check-equivalence (eq-18.3.13.3 p q)
     (◇ {p ∧ q})
-    {(◇ p) ∧ (◇ q)}))
-(define-and-check (eq-25.13.4 p q)
-  (eq?
+    {(◇ p) ∧ (◇ q)})
+(check-equivalence (eq-18.3.13.4 p q)
     (◇ {p ∨ q})
-    {(◇ p) ∨ (◇ q)}))
+    {(◇ p) ∨ (◇ q)})
 
-(define-and-check (eq-19.2.7.1 p q)
-  (eq?
+(check-equivalence (eq-19.2.7.1 p q)
     {p ⊃ q}
-    {(not/tvl q) ⊃ (not/tvl p)}))
+    {(¬ q) ⊃ (¬ p)})
 
-; TODO check 19.2.7.2 is SAT
+;; Now we check whether we can construct ⊃ from ⇒ and other modalities (see the discussion in Section 18.2.3) using an expression of fixed maximum depth
 
-; TODO 19.4.12
-; TODO 19.4.13
+(module+ test
+  (define-grammar (dimp-and-modalities p q)
+    [expr
+      (choose
+        p q 'f
+        {(expr) ⇒ (expr)}
+        (¬ (expr)) ; we also throw in negation, which does not seem to help
+        (◇ (expr))
+        (□ (expr)))])
+
+  (define (my-mimp p q)
+    (dimp-and-modalities p q #:depth 4))
+
+  (define (check-is-mimp expr p q)
+    (assert
+      (eq?
+        (expr p q)
+        (⊃ p q))))
+
+  (define-symbolic p/bv q/bv (bitvector 2))
+
+  (define my-mimp-solution
+    (synthesize
+      #:forall (list p/bv q/bv)
+      #:guarantee (check-is-mimp my-mimp (bv-to-3 p/bv) (bv-to-3 q/bv))))
+
+  ;; We cannot construct ⊃ using expression generated by the grammar with depth at most 4:
+  (check-false (sat? my-mimp-solution)))
