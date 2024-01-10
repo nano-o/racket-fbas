@@ -305,7 +305,7 @@
     {(□ p) ∧ (□ q)}))
 (define-and-check (eq-25.13.2 p q)
   (eq?
-    (□ (∨ p q))
+    (□ {p ∨ q})
     {(□ p) ∨ (□ q)}))
 (define-and-check (eq-25.13.3 p q)
   (eq?
