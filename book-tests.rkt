@@ -5,30 +5,10 @@
 (require rosette/lib/synthax
          syntax/parse/define
          "truth-tables.rkt"
+         "tvl-verification.rkt"
          (for-syntax
            racket/syntax
            syntax/to-string))
-
-; we use 2 bits to represent a tvl value as a bitvector
-(define (bv-to-3 b)
-  (cond
-    [(bveq b (bv #b11 2)) 't] ; #b11 is 't
-    [(or (bveq b (bv #b01 2)) (bveq b (bv #b10 2))) 'b] ; #b01 and #b10 both represent 'b
-    [(bveq b (bv #b00 2)) 'f])) ; #b00 is 'f
-
-; this expands to code that returns a Rosette "solution"
-(define-syntax-parser verify-with-tvl-args
-  [(_ (f:id arg ...))
-   (with-syntax
-     ([(arg/bv ...) ; symbols for tvl symbolic variables
-       (for/list ([arg (syntax->list #'(arg ...))])
-         (format-id #'eq-to-check "~a/bv" (syntax->datum arg)))])
-     #'(let () ; we use let to hide the following definitions from the outer scope
-         (define-symbolic arg/bv ... (bitvector 2))
-         (define arg (bv-to-3 arg/bv)) ...
-         (verify
-           (assert
-             (f arg ...)))))])
 
 (define-syntax-parser verify-is-true
   [(_ (name:id arg ...) body)
@@ -174,6 +154,15 @@
     (eq?
       {p ⊃ q}
       {(¬ q) ⊃ (¬ p)}))
+
+(verify-is-true (eq-18.4.12.1 p q r)
+    (eq?
+      {p ⊃ {q ⊃ r}}
+      {{p ∧ q} ⊃ r}))
+(verify-is-true (eq-18.4.12.2 p q r)
+    (eq?
+      {p ⇒ {q ⇒ r}}
+      {{p ∧ q} ⇒ r}))
 
 ;; Now we check whether we can construct ⊃ from ⇒ and other modalities using an expression of fixed maximum depth
 
