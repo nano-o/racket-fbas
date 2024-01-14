@@ -1,11 +1,13 @@
 #lang racket
 (require
   (only-in racket/hash hash-union!)
-  racket/trace)
+  #;racket/trace)
 
 (provide
   (struct-out qset)
-  flatten-qsets)
+  qset/kw
+  flatten-qsets
+  reduce-orgs)
 
 (define-struct qset (threshold validators inner-qsets) #:prefab)
 
@@ -66,7 +68,7 @@
     (string->unreadable-symbol (~v (equal-hash-code q))))
   (define new-qset-map
     (make-hash qset-map)) ; we want it mutable
-  (trace-define (flatten q) ; NOTE: has side-effects on new-qset-map!
+  (define (flatten q) ; NOTE: has side-effects on new-qset-map!
     (define flattened-iqs
       (for/set ([iq (in-set (qset-inner-qsets q))])
         (flatten iq)))
@@ -92,3 +94,36 @@
     (for/and ([q (dict-values (flatten-qsets `((p . ,qset-6))))])
       (set-empty? (qset-inner-qsets q)))))
 
+; TODO: single point for orgs that have >1/2 threshold
+; NOTE: for now this is just a quick hack and is incorrect in general
+(define (reduce-orgs qset-map)
+  (define (qset-symbol q)
+    (string->unreadable-symbol (~v (equal-hash-code q))))
+  (define new-qset-map
+    (make-hash qset-map)) ;mutable
+  (for ([(p q) (in-dict qset-map)])
+    (define new-points
+      (for/seteqv ([iq (in-set (qset-inner-qsets q))])
+                  (qset-symbol iq)))
+    (for ([p (in-set new-points)]) ; new points get a singleton qset with just themselves
+      (hash-set! new-qset-map p (qset 1 (seteqv p) (set))))
+    ; remove the old points? no! what would remain?
+    #;(for ([iq (in-set (qset-inner-qsets q))])
+      (for ([p (in-set (qset-validators iq))])
+        (hash-remove! new-qset-map p)))
+    ; add the new points to this qset's validators:
+    (hash-set!
+      new-qset-map
+      p
+      (qset/kw
+        #:threshold (qset-threshold q)
+        #:inner-qsets (set)
+        #:validators (set-union
+                       (qset-validators q)
+                       new-points))))
+  (for/list ([(p q) (in-hash new-qset-map)])
+    (cons p q)))
+
+(module+ test
+  (reduce-orgs `(,(cons 'a qset-6)))
+  (check-not-exn (thunk (reduce-orgs `(,(cons 'p qset-6))))))
