@@ -11,6 +11,7 @@
 ; these are the logical connectives
 (provide
   ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B
+  and/tvl* or/tvl*
   designated-value)
 
 ;; First we create a macro to make it easier to write down truth tables
@@ -61,7 +62,13 @@
 
 ;; Now we define the truth tables
 
+; TODO: and/tvl*, or/tvl* (might help Rosette not to have huge nested conjuctions and disjunctions)
+; TODO: add tests for and/tvl* and or/tvl*
+
 (define-truth-table {p ∧ q}
+  ; if one if 'f, then 'f
+  ; else if one if 'b, then 'b
+  ; else 't
   [t t t]
   [t b b]
   [t f f]
@@ -72,8 +79,37 @@
   [f b f]
   [f f f])
 
+(define (and/tvl* . vs)
+  (cond
+    [(member 'f vs) 'f]
+    [(member 'b vs) 'b]
+    [else 't]))
+
+(module+ test
+  ; we use 2 bits to represent a tvl value as a bitvector
+  (define (bv-to-3 b)
+    (cond
+      [(bveq b (bv #b11 2)) 't] ; #b11 is 't
+      [(or (bveq b (bv #b01 2)) (bveq b (bv #b10 2))) 'b] ; #b01 and #b10 both represent 'b
+      [(bveq b (bv #b00 2)) 'f])) ; #b00 is 'f
+  (define-symbolic p/bv q/bv r/bv (bitvector 2))
+  (define p (bv-to-3 p/bv))
+  (define q (bv-to-3 q/bv))
+  (define r (bv-to-3 r/bv))
+  (define sol
+    (verify
+      (assert
+        (eq?
+          {p ∧ {q ∧ r}}
+          (and/tvl* p q r)))))
+  (if (sat? sol)
+    (println sol)
+    (println "unsat")))
 
 (define-truth-table {p ∨ q}
+  ; if one if 'f, then 'f
+  ; else if one if 'b, then 'b
+  ; else 't
   [t t t]
   [t b t]
   [t f t]
@@ -83,6 +119,23 @@
   [f t t]
   [f b b]
   [f f f])
+
+(define (or/tvl* . vs)
+  (cond
+    [(member 't vs) 't]
+    [(member 'b vs) 'b]
+    [else 'f]))
+
+(module+ test
+  (define sol2
+    (verify
+      (assert
+        (eq?
+          {p ∨ {q ∨ r}}
+          (or/tvl* p q r)))))
+  (if (sat? sol2)
+    (println sol2)
+    (println "unsat")))
 
 (define-truth-table {p ⇒ q}
   [t t t]

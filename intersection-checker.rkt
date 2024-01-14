@@ -10,12 +10,14 @@
     racket/syntax
     racket/pretty))
 
+; TODO: dump smt file to see how big it gets
+
 (provide
   check-intertwined
   check-intertwined/stellarbeat)
 
 (define-for-syntax (check-intertwined/datum data points-to-check)
-  ; TODO: it seems that Rosette or Racket can't handle large syntax objects
+  ; TODO: display non-intertwined points if check fails
   (define qset-map
     (flatten-qsets data))
   #;(println (format "there are ~v points" (length (dict-keys qset-map))))
@@ -42,20 +44,23 @@
       (define k (qset-threshold q))
       (define bs (combinations (set->list (qset-validators q)) (+ (- n k) 1))) ; blocking sets
       (define (blocking-fmla b polarity)
-        (for/fold
-          ([acc #''t])
-          ([p b])
-          #`(∧ #,acc #,(polarity (dict-ref symbols-map p)))))
+        #`(and/tvl*
+            #,@(for/fold
+                 ([acc #'('t)])
+                 ([p b])
+                 #`(#,@acc #,(polarity (dict-ref symbols-map p))))))
       (define (blocked polarity)
-        (for/fold
-          ([acc #''f])
-          ([b bs])
-          #`(∨ #,acc #,(blocking-fmla b polarity))))
+        #`(or/tvl*
+            #,@(for/fold
+                 ([acc #'('f)])
+                 ([b bs])
+                 #`(#,@acc #,(blocking-fmla b polarity)))))
       (define conj-blocked-points
-        (for/fold
-          ([acc #''t])
-          ([p ps])
-          #`(∧ #,acc #,(polarity (dict-ref symbols-map p)))))
+        #`(and/tvl*
+           #,@(for/fold
+                ([acc #'('t)])
+                ([p ps])
+                #`(#,@acc #,(polarity (dict-ref symbols-map p))))))
       #`(⇒ #,(blocked polarity) #,conj-blocked-points))
     #;(define (closedAx p polarity)
       (define q (dict-ref qset-map p))
@@ -75,21 +80,22 @@
       #`(⇒ #,(blocked polarity) #,(polarity (dict-ref symbols-map p))))
     (with-syntax*
       ([equivs
-         (for/fold
-           ([acc #''t])
-           ([pair (combinations points-to-check 2)])
-           #`(∧  #,acc (≡ #,(dict-ref symbols-map (first pair)) #,(dict-ref symbols-map (second pair)))))]
+         #`(and/tvl*
+             #,@(for/fold
+                  ([acc #'('t)])
+                  ([pair (combinations points-to-check 2)])
+                  #`(#,@acc (≡ #,(dict-ref symbols-map (first pair)) #,(dict-ref symbols-map (second pair))))))]
        [ax
-         (for/fold
-           ([acc #''t])
-           ([(q ps) (in-dict (invert-qset-map qset-map))]
-            #:when (not
-                     (and
-                       (equal? (qset-validators q) (seteqv (car ps)))
-                       (equal? (length ps) 1))))
-           #;(pretty-print qset-map)
-           #;(pretty-print (invert-qset-map qset-map))
-           #`(∧  #,acc (∧ #,(closedAx2 q ps identity) #,(closedAx2 q ps negate))))]
+         #`(and/tvl*
+             #,@(for/fold
+                  ([acc #'('t)])
+                  ([(q ps) (in-dict (invert-qset-map qset-map))]
+                   #:when (not
+                            (and
+                              (equal? (qset-validators q) (seteqv (car ps)))
+                              (equal? (length ps) 1))))
+                  ; (pretty-print ps)
+                  #`(#,@acc #,(closedAx2 q ps identity) #,(closedAx2 q ps negate))))]
        #;[ax
          (for/fold
            ([acc #''t])
@@ -98,8 +104,8 @@
        [fmla
          #'(⇒ ax equivs)])
       ; uncomment to print the axioms
-      #;(println "done building fmla")
-      #;(pretty-print (syntax->datum #'fmla))
+      (println "done building fmla")
+      (pretty-print (syntax->datum #'fmla))
       #'(begin
           #;(define name wst)
           (let ()
@@ -118,5 +124,6 @@
 (define-syntax (check-intertwined/stellarbeat stx)
   (syntax-parse stx
     [(_)
-     (define network (get-stellar-top-tier))
+     (define network (get-stellar-network))
+     ; (define network (get-stellar-top-tier))
      (check-intertwined/datum (reduce-orgs network) (dict-keys network))]))
