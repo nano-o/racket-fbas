@@ -1,13 +1,15 @@
 #lang racket
 (require
   (only-in racket/hash hash-union!)
-  #;racket/trace)
+  #;racket/trace
+  racket/pretty)
 
 (provide
   (struct-out qset)
   qset/kw
   flatten-qsets
-  reduce-orgs)
+  reduce-orgs
+  invert-qset-map)
 
 (define-struct qset (threshold validators inner-qsets) #:prefab)
 
@@ -85,6 +87,13 @@
       #:inner-qsets (set)))
   (for ([(p qset) (in-dict qset-map)])
     (hash-set! new-qset-map p (flatten qset))) ; NOTE: side-effect on new-qset-map!
+  (define non-self-qsets
+    (for/set ([(p q) (in-hash new-qset-map)]
+               #:when (not (equal? (qset-validators q) (list p))))
+      q))
+  #;(println "flattened data:")
+  #;(println (format "there are ~v non-self qsets" (set-count non-self-qsets)))
+  #;(pretty-print new-qset-map)
   ; finally, return an alist
   (for/list ([(q qs) (in-dict new-qset-map)])
     (cons q qs)))
@@ -125,5 +134,28 @@
     (cons p q)))
 
 (module+ test
-  (reduce-orgs `(,(cons 'a qset-6)))
+  #;(reduce-orgs `(,(cons 'a qset-6)))
   (check-not-exn (thunk (reduce-orgs `(,(cons 'p qset-6))))))
+
+(define (invert-qset-map qset-map)
+  ; assumes flat qsets
+  (for/fold
+    ([acc null])
+    ([(p q) (in-dict qset-map)])
+    (if (dict-has-key? acc q)
+      (dict-set acc q (cons p (dict-ref acc q)))
+      (dict-set acc q (list p)))))
+
+(module+ test
+
+  (define conf-1
+    (list
+      (cons 'q (qset 1 (seteqv 'q) (set)))
+      (cons 'r (qset 1 (seteqv 'p) (set)))
+      (cons 'p (qset 1 (seteqv 'q) (set)))))
+
+  (invert-qset-map conf-1)
+
+  (check-equal?
+    (invert-qset-map `(,(cons 'q qset-1) ,(cons 'p qset-1)))
+    (list (list (qset 2 (seteqv 1 2 3) (set)) 'p 'q))))
