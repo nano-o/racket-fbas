@@ -12,23 +12,24 @@
 
 (define-syntax-parser verify-is-true
   [(_ (name:id arg ...) body)
-   #`(module+ test
-       (let () ; we use let to hide the following definitions from the outer scope
-         (define (name arg ...) body)
-         (define result
-           (verify-with-tvl-args (name arg ...)))
-         (define cex
-           (begin
+   #`(begin
+       (define (name arg ...) body)
+       (module+ test
+         (let () ; we use let to hide the following definitions from the outer scope
+           (define result
+             (verify-with-tvl-args (name arg ...)))
+           (define cex
+             (begin
+               (if (sat? result)
+                 (model result)
+                 #f)))
+           (define msg
              (if (sat? result)
-               (model result)
-               #f)))
-         (define msg
-           (if (sat? result)
-             (format
-               #,(format "~a is falsified by the valuation ~~a" (syntax->string #'(name)))
-               cex)
-             #f))
-         (check-true (unsat? result) msg)))])
+               (format
+                 #,(format "~a is falsified by the valuation ~~a" (syntax->string #'(name)))
+                 cex)
+               #f))
+           (check-true (unsat? result) msg))))])
 
 ;; Figure 18.3
 
@@ -163,6 +164,23 @@
     (eq?
       {p ⇒ {q ⇒ r}}
       {{p ∧ q} ⇒ r}))
+
+;; 18.4.3
+
+(verify-is-true (my-eq-1 p q)
+    (eq?
+      (designated-value {p ∧ q})
+      (and (designated-value p) (designated-value q))))
+
+(verify-is-true (my-eq-2 p q)
+    (eq?
+      (designated-value {p ⇒ q})
+      (=> (designated-value p) (designated-value q))))
+
+(verify-is-true (my-eq-3 a p q)
+    (eq?
+      (designated-value {a ⇒ {p ∧ q}})
+      (and (designated-value {a ⇒ p}) (designated-value {a ⇒ q}))))
 
 ;; Now we check whether we can construct ⊃ from ⇒ and other modalities using an expression of fixed maximum depth
 

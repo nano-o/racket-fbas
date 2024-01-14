@@ -21,9 +21,12 @@
     #:description "a three-valued logic value (either 't, 'b, or 'f)"
     (pattern (~or* (~literal t) (~literal f) (~literal b)))))
 
+(define (to-bool v)
+  (if v #t #f))
+
 ;; 't and 'b are the designated values
 (define (designated-value v)
-  (member v '(t b)))
+  (to-bool (member v '(t b))))
 
 (define-syntax (define-truth-table stx)
   (syntax-parse stx

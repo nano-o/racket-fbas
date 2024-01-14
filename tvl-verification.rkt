@@ -2,10 +2,12 @@
 ; We use the sweet-exp adapter to enable infix syntax when we write logical formulas
 #lang sweet-exp rosette/safe
 
-(require syntax/parse/define
-         "truth-tables.rkt"
-         (for-syntax
-           racket/syntax))
+(require
+  syntax/parse/define
+  "truth-tables.rkt"
+  (for-syntax
+    racket/syntax))
+
 (provide
   verify-with-tvl-args
   verify-valid/tvl
