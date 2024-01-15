@@ -14,21 +14,24 @@
   and/tvl* or/tvl*
   designated-value)
 
-;; First we create a macro to make it easier to write down truth tables
+; The logical values are 't, 'b, and 'f (true, both, and false)
+(define truth-values
+  '(t b f))
 
-;; The logical values are 't, 'b, and 'f (true, both, and false)
+; Next we write a macro to make is easier to define truth tables
+; We start with a syntax class for tvl values
 (begin-for-syntax
   (define-syntax-class tvl-value
     #:description "a three-valued logic value (either 't, 'b, or 'f)"
     (pattern (~or* (~literal t) (~literal f) (~literal b)))))
 
-(define (to-bool v)
-  (if v #t #f))
-
-;; 't and 'b are the designated values
+; 't and 'b are the designated values
 (define (designated-value v)
+  (define (to-bool v)
+    (if v #t #f))
   (to-bool (member v '(t b))))
 
+; the macro
 (define-syntax (define-truth-table stx)
   (syntax-parse stx
     [(_ (operation:id _ ...)
@@ -60,15 +63,9 @@
            [((value ...)) (quote result)] ...
            [else 'error])))]))
 
-;; Now we define the truth tables
-
-; TODO: and/tvl*, or/tvl* (might help Rosette not to have huge nested conjuctions and disjunctions)
-; TODO: add tests for and/tvl* and or/tvl*
+; Now we define the truth tables
 
 (define-truth-table {p ∧ q}
-  ; if one if 'f, then 'f
-  ; else if one if 'b, then 'b
-  ; else 't
   [t t t]
   [t b b]
   [t f f]
@@ -79,6 +76,7 @@
   [f b f]
   [f f f])
 
+; a shorthand for writing big conjunctions
 (define (and/tvl* . vs)
   (cond
     [(member 'f vs) 'f]
@@ -86,30 +84,17 @@
     [else 't]))
 
 (module+ test
-  ; we use 2 bits to represent a tvl value as a bitvector
-  (define (bv-to-3 b)
-    (cond
-      [(bveq b (bv #b11 2)) 't] ; #b11 is 't
-      [(or (bveq b (bv #b01 2)) (bveq b (bv #b10 2))) 'b] ; #b01 and #b10 both represent 'b
-      [(bveq b (bv #b00 2)) 'f])) ; #b00 is 'f
-  (define-symbolic p/bv q/bv r/bv (bitvector 2))
-  (define p (bv-to-3 p/bv))
-  (define q (bv-to-3 q/bv))
-  (define r (bv-to-3 r/bv))
-  (define sol
-    (verify
-      (assert
-        (eq?
-          {p ∧ {q ∧ r}}
-          (and/tvl* p q r)))))
-  (if (sat? sol)
-    (println sol)
-    (println "unsat")))
+  (require rackunit)
+  (require (only-in racket for/and))
+  (check-true
+    (for/and ([p truth-values]
+              [q truth-values]
+              [r truth-values])
+      (eq?
+        {p ∧ {q ∧ r}}
+        (and/tvl* p q r)))))
 
 (define-truth-table {p ∨ q}
-  ; if one if 'f, then 'f
-  ; else if one if 'b, then 'b
-  ; else 't
   [t t t]
   [t b t]
   [t f t]
@@ -120,6 +105,7 @@
   [f b b]
   [f f f])
 
+; a shorthand for writing big disjunctions
 (define (or/tvl* . vs)
   (cond
     [(member 't vs) 't]
@@ -127,15 +113,13 @@
     [else 'f]))
 
 (module+ test
-  (define sol2
-    (verify
-      (assert
-        (eq?
-          {p ∨ {q ∨ r}}
-          (or/tvl* p q r)))))
-  (if (sat? sol2)
-    (println sol2)
-    (println "unsat")))
+  (check-true
+    (for/and ([p truth-values]
+              [q truth-values]
+              [r truth-values])
+      (eq?
+        {p ∨ {q ∨ r}}
+        (or/tvl* p q r)))))
 
 (define-truth-table {p ⇒ q}
   [t t t]
