@@ -21,8 +21,8 @@
   (define points-to-check (dict-keys data))
   (define qset-map
     (flatten-qsets (collapse-orgs data)))
-  (println (format "there are ~v points" (length (dict-keys qset-map))))
-  (println (format "there are ~v points to check are intertwined" (length points-to-check)))
+  ; (println (format "there are ~v points" (length (dict-keys qset-map))))
+  ; (println (format "there are ~v points to check are intertwined" (length points-to-check)))
   ; (pretty-print data)
   ; collect all points
   (define points
@@ -65,12 +65,13 @@
                 #`(#,@acc #,(polarity (dict-ref symbols-map p))))))
       #`(⇒ #,(blocked polarity) #,conj-blocked-points))
     (with-syntax*
-      ([equivs ; TODO: can we use a ring of implications?
+      ([equivs
          #`(and/tvl*
              #,@(for/fold
                   ([acc #'('t)])
-                  ([pair (combinations points-to-check 2)])
-                  #`(#,@acc (≡ #,(dict-ref symbols-map (first pair)) #,(dict-ref symbols-map (second pair))))))]
+                  ([p points-to-check]
+                   [q (append (cdr points-to-check) (list (car points-to-check)))])
+                  #`(#,@acc (⊃ #,(dict-ref symbols-map p) #,(dict-ref symbols-map q)))))]
        [ax
          #`(and/tvl*
              #,@(for/fold

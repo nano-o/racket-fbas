@@ -157,6 +157,7 @@
 
 ; equivalence based on material implication
 (define-truth-table {p ≡ q}
+  ; if one is both then both
   [t t t]
   [t b b]
   [t f f]
@@ -166,6 +167,15 @@
   [f t f]
   [f b b]
   [f f t])
+
+(module+ test
+  (check-true
+    (for/and ([p truth-values]
+              [q truth-values]
+              [r truth-values])
+      (eq?
+        {{p ≡ q} ∧ {q ≡ r}}
+        {{p ⊃ q} ∧ {{q ⊃ r} ∧ {r ⊃ p}}}))))
 
 (define-truth-table (¬ p)
   [t f]
