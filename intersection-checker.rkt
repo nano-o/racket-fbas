@@ -16,12 +16,14 @@
   check-intertwined
   check-intertwined/stellarbeat)
 
-(define-for-syntax (check-intertwined/datum data points-to-check)
+(define-for-syntax (check-intertwined/datum data)
   ; TODO: display non-intertwined points if check fails
+  (define points-to-check (dict-keys data))
   (define qset-map
-    (flatten-qsets data))
-  #;(println (format "there are ~v points" (length (dict-keys qset-map))))
-  #;(println (format "there are ~v points to check are intertwined" (length points-to-check)))
+    (flatten-qsets (collapse-orgs data)))
+  (println (format "there are ~v points" (length (dict-keys qset-map))))
+  (println (format "there are ~v points to check are intertwined" (length points-to-check)))
+  ; (pretty-print data)
   ; collect all points
   (define points
     (dict-keys qset-map))
@@ -62,24 +64,8 @@
                 ([p ps])
                 #`(#,@acc #,(polarity (dict-ref symbols-map p))))))
       #`(⇒ #,(blocked polarity) #,conj-blocked-points))
-    #;(define (closedAx p polarity)
-      (define q (dict-ref qset-map p))
-      (define n (set-count (qset-validators q)))
-      (define k (qset-threshold q))
-      (define bs (combinations (set->list (qset-validators q)) (+ (- n k) 1))) ; blocking sets
-      (define (blocking-fmla b polarity)
-        (for/fold
-          ([acc #''t])
-          ([p b])
-          #`(∧  #,acc #,(polarity (dict-ref symbols-map p)))))
-      (define (blocked polarity)
-        (for/fold
-          ([acc #''f])
-          ([b bs])
-          #`(∨ #,acc #,(blocking-fmla b polarity))))
-      #`(⇒ #,(blocked polarity) #,(polarity (dict-ref symbols-map p))))
     (with-syntax*
-      ([equivs
+      ([equivs ; TODO: can we use a ring of implications?
          #`(and/tvl*
              #,@(for/fold
                   ([acc #'('t)])
@@ -96,16 +82,11 @@
                               (equal? (length ps) 1))))
                   ; (pretty-print ps)
                   #`(#,@acc #,(closedAx2 q ps identity) #,(closedAx2 q ps negate))))]
-       #;[ax
-         (for/fold
-           ([acc #''t])
-           ([p points])
-           #`(∧ (∧ #,(closedAx p identity) #,acc) (∧ #,(closedAx p negate) #,acc)))]
        [fmla
          #'(⇒ ax equivs)])
       ; uncomment to print the axioms
-      (println "done building fmla")
-      (pretty-print (syntax->datum #'fmla))
+      ; (println "done building fmla")
+      ; (pretty-print (syntax->datum #'fmla))
       #'(begin
           #;(define name wst)
           (let ()
@@ -119,11 +100,12 @@
      #;(println "data:")
      (define data (eval-syntax #'qsets (module->namespace "qset2.rkt")))
      #;(pretty-print data)
-     (check-intertwined/datum data (dict-keys data))]))
+     (check-intertwined/datum data)]))
 
 (define-syntax (check-intertwined/stellarbeat stx)
   (syntax-parse stx
     [(_)
      (define network (get-stellar-network))
      ; (define network (get-stellar-top-tier))
-     (check-intertwined/datum (reduce-orgs network) (dict-keys network))]))
+     (check-intertwined/datum network)
+     #;(check-intertwined/datum network (dict-keys network))]))

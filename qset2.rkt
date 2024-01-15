@@ -8,7 +8,7 @@
   (struct-out qset)
   qset/kw
   flatten-qsets
-  reduce-orgs
+  collapse-orgs
   invert-qset-map)
 
 (define-struct qset (threshold validators inner-qsets) #:prefab)
@@ -65,12 +65,11 @@
 
 (define (flatten-qsets qset-map)
   ; builds a new qset configuration that has quorum-intersection if and only if the original one has it, and where no quorumset has any inner quorum sets.
-  ; this might be premature optimization...
   (define (qset-symbol q)
     (string->unreadable-symbol (~v (equal-hash-code q))))
   (define new-qset-map
-    (make-hash qset-map)) ; we want it mutable
-  (define (flatten q) ; NOTE: has side-effects on new-qset-map!
+    (make-hash qset-map)) ; this is mutable
+  (define (flatten q) ; NOTE: mutates new-qset-map!
     (define flattened-iqs
       (for/set ([iq (in-set (qset-inner-qsets q))])
         (flatten iq)))
@@ -80,21 +79,14 @@
     (hash-union!
       new-qset-map
       new-points
-      #:combine/key (λ (k v1 v2) v1)) ; NOTE: side-effect!
+      #:combine/key (λ (k v1 v2) v1)) ; NOTE: mutation!
     (qset/kw ; we remove the inner qsets and add corresponding points
       #:threshold (qset-threshold q)
       #:validators (set-union (qset-validators q) (apply seteqv (dict-keys new-points)))
       #:inner-qsets (set)))
   (for ([(p qset) (in-dict qset-map)])
-    (hash-set! new-qset-map p (flatten qset))) ; NOTE: side-effect on new-qset-map!
-  (define non-self-qsets
-    (for/set ([(p q) (in-hash new-qset-map)]
-               #:when (not (equal? (qset-validators q) (list p))))
-      q))
-  #;(println "flattened data:")
-  #;(println (format "there are ~v non-self qsets" (set-count non-self-qsets)))
-  #;(pretty-print new-qset-map)
-  ; finally, return an alist
+    (hash-set! new-qset-map p (flatten qset))) ; NOTE: mutates new-qset-map!
+  ; finally, return an alist:
   (for/list ([(q qs) (in-dict new-qset-map)])
     (cons q qs)))
 
@@ -103,39 +95,92 @@
     (for/and ([q (dict-values (flatten-qsets `((p . ,qset-6))))])
       (set-empty? (qset-inner-qsets q)))))
 
-; TODO: single point for orgs that have >1/2 threshold
-; NOTE: for now this is just a quick hack and is incorrect in general
-(define (reduce-orgs qset-map)
-  (define (qset-symbol q)
+(define (collapse-orgs qset-map)
+  (define (collapsible? q)
+    ; a qset can be collapsed to a point when:
+    ;   * it does not have inner qsets
+    ;   * its threshold is greater than 1/2
+    ;   * and its members do not appear anywhere except in this very qset
+    ;   * its members all have the same qset
+    (define (overlaps-q q2)
+      (and
+        (not (equal? q q2))
+        (or
+          (not
+            (set-empty?
+              (set-intersect (qset-validators q2) (qset-validators q))))
+          (for/or ([q3 (qset-inner-qsets q2)])
+            (overlaps-q q3)))))
+    (and
+      (for/and ([v (qset-validators q)])
+        (equal?
+          (dict-ref qset-map v)
+          (dict-ref qset-map (car (set->list (qset-validators q))))))
+      (set-empty? (qset-inner-qsets q))
+      (> (* 2 (qset-threshold q)) (set-count (qset-validators q)))
+      (not
+        (for/or ([(_ q2) (in-dict qset-map)])
+          (overlaps-q q2)))))
+  ; first, identify all the qsets to collapse
+  ; second, collapse their occurences
+  ; finally, give the new points their qsets
+  (define to-collapse
+    (let ()
+      (define (to-collapse q)
+        (cond
+          [(collapsible? q) (set q)]
+          [(not (set-empty? (qset-inner-qsets q)))
+           (apply
+             set-union
+             (for/list ([iq (in-set (qset-inner-qsets q))])
+               (to-collapse iq)))]
+          [else (set)]))
+      (apply
+        set-union
+        (for/list ([q (dict-values qset-map)])
+          (to-collapse q)))))
+  (pretty-print (format "number of qsets to collapse: ~a" (set-count to-collapse)))
+  (define result
+    (make-hash qset-map)) ; mutable copy of qset-map
+  (define (qset-symbol q) ; creats a symbol for a qset
     (string->unreadable-symbol (~v (equal-hash-code q))))
-  (define new-qset-map
-    (make-hash qset-map)) ;mutable
-  (for ([(p q) (in-dict qset-map)])
-    (define new-points
-      (for/seteqv ([iq (in-set (qset-inner-qsets q))])
-                  (qset-symbol iq)))
-    (for ([p (in-set new-points)]) ; new points get a singleton qset with just themselves
-      (hash-set! new-qset-map p (qset 1 (seteqv p) (set))))
-    ; remove the old points? no! what would remain?
-    #;(for ([iq (in-set (qset-inner-qsets q))])
-      (for ([p (in-set (qset-validators iq))])
-        (hash-remove! new-qset-map p)))
-    ; add the new points to this qset's validators:
-    (hash-set!
-      new-qset-map
-      p
+  (define (collapse q)
+    (if (set-member? to-collapse q)
       (qset/kw
-        #:threshold (qset-threshold q)
-        #:inner-qsets (set)
-        #:validators (set-union
-                       (qset-validators q)
-                       new-points))))
-  (for/list ([(p q) (in-hash new-qset-map)])
+        #:threshold 1
+        #:validators (seteqv (qset-symbol q))
+        #:inner-qsets (set))
+      (let ()
+        (qset/kw
+          #:threshold (qset-threshold q)
+          #:validators (set-union
+                         (qset-validators q)
+                         (for/seteqv ([q2 (set-intersect (qset-inner-qsets q) to-collapse)])
+                            (qset-symbol q2)))
+          #:inner-qsets (set-subtract
+                          (qset-inner-qsets q)
+                          to-collapse)))))
+  (for ([(p q) (in-hash result)])
+    (hash-set! result p (collapse q)))
+  ; it remains to give the new points their qsets
+  (for ([q to-collapse])
+    (hash-set!
+      result
+      (qset-symbol q)
+      ; note it's important to use result:
+      (dict-ref result (car (set->list (qset-validators q))))))
+  ; finally, we return an alist:
+  (for/list ([(p q) (in-hash result)])
     (cons p q)))
 
 (module+ test
-  #;(reduce-orgs `(,(cons 'a qset-6)))
-  (check-not-exn (thunk (reduce-orgs `(,(cons 'p qset-6))))))
+  (check-not-exn (thunk (collapse-orgs `(,(cons 'p qset-6)))))
+  (define qset-7
+    (qset/kw #:threshold 2 #:validators (seteqv 'a) #:inner-qsets (set qset-1 qset-3 qset-4)))
+  (check-equal?
+    ; qset-3 should not be collapsed
+    (length (collapse-orgs `(,(cons 'v qset-7))))
+    3))
 
 (define (invert-qset-map qset-map)
   ; assumes flat qsets
@@ -154,7 +199,7 @@
       (cons 'r (qset 1 (seteqv 'p) (set)))
       (cons 'p (qset 1 (seteqv 'q) (set)))))
 
-  (invert-qset-map conf-1)
+  ; (invert-qset-map conf-1)
 
   (check-equal?
     (invert-qset-map `(,(cons 'q qset-1) ,(cons 'p qset-1)))
