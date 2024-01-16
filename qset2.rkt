@@ -8,7 +8,7 @@
   (struct-out qset)
   qset/kw
   flatten-qsets
-  collapse-orgs
+  collapse-qsets
   invert-qset-map)
 
 (define-struct qset (threshold validators inner-qsets) #:prefab)
@@ -95,13 +95,16 @@
     (for/and ([q (dict-values (flatten-qsets `((p . ,qset-6))))])
       (set-empty? (qset-inner-qsets q)))))
 
-(define (collapse-orgs qset-map)
+(define (collapse-qsets qset-map)
+  ; TODO: we could identify groups of qsets that "intersect" and whose members don't appear anywhere else and have the same qset, and collapse them all to the same point.
+  ; TODO: print info about what cannot be collapsed? Could attach info about orgs a struct property
   (define (collapsible? q)
     ; a qset can be collapsed to a point when:
     ;   * it does not have inner qsets
     ;   * its threshold is greater than 1/2
-    ;   * and its members do not appear anywhere except in this very qset
+    ;   * its members do not appear anywhere except in this very qset
     ;   * its members all have the same qset
+    ; TODO don't collapse if singleton? Unlikely to happen in practice.
     (define (overlaps-q q2)
       (and
         (not (equal? q q2))
@@ -174,12 +177,12 @@
     (cons p q)))
 
 (module+ test
-  (check-not-exn (thunk (collapse-orgs `(,(cons 'p qset-6)))))
+  (check-not-exn (thunk (collapse-qsets `(,(cons 'p qset-6)))))
   (define qset-7
     (qset/kw #:threshold 2 #:validators (seteqv 'a) #:inner-qsets (set qset-1 qset-3 qset-4)))
   (check-equal?
     ; qset-3 should not be collapsed
-    (length (collapse-orgs `(,(cons 'v qset-7))))
+    (length (collapse-qsets `(,(cons 'v qset-7))))
     3))
 
 (define (invert-qset-map qset-map)
