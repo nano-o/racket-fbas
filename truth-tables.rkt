@@ -1,22 +1,25 @@
 ;; In this file we define the semantics of logical operations of the three-valued logic by giving their truth tables
 
 ; We use the rosette/safe language to enable symbolic execution
-; We use the sweet-exp adapter to enable infix syntax when we write logical formulas
+; We use the sweet-exp language mixin to enable infix operators in logical formulas
 #lang sweet-exp rosette/safe
 
 (require
   syntax/parse/define
-  (for-syntax racket/syntax))
+  (only-in racket for*/and)
+  racket/local
+  racket/pretty
+  (for-syntax
+    syntax/to-string
+    racket/syntax))
 
-; these are the logical connectives
 (provide
-  ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B
-  and/tvl* or/tvl*
+  ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B ; These are the logical connectives
+  and/tvl* or/tvl* material-equiv/tvl*
   designated-value)
 
 ; The logical values are 't, 'b, and 'f (true, both, and false)
-(define truth-values
-  '(t b f))
+(define truth-values '(t b f))
 
 ; Next we write a macro to make is easier to define truth tables
 ; We start with a syntax class for tvl values
@@ -27,11 +30,9 @@
 
 ; 't and 'b are the designated values
 (define (designated-value v)
-  (define (to-bool v)
-    (if v #t #f))
-  (to-bool (member v '(t b))))
+  (if (member v '(t b)) #t #f))
 
-; the macro
+; A macro to define truth tables:
 (define-syntax (define-truth-table stx)
   (syntax-parse stx
     [(_ (operation:id _ ...)
@@ -76,20 +77,38 @@
   [f b f]
   [f f f])
 
-; a shorthand for writing big conjunctions
+; A shorthand for writing big conjunctions:
 (define (and/tvl* . vs)
   (cond
     [(member 'f vs) 'f]
     [(member 'b vs) 'b]
     [else 't]))
 
+(define-syntax-parser check-by-enumeration
+  [(_ (f:id arg ...))
+     #`(for*/and ([arg truth-values] ...)
+         (or
+           (f arg ...)
+           (and
+             (pretty-print
+               (format
+                 #,(format "~a is falsified by the valuation ~~a" (syntax->string #'(f)))
+                 (list `(arg . ,arg) ...)))
+             #f)))])
+
 (module+ test
   (require rackunit)
-  (require (only-in racket for/and))
-  (check-true
-    (for/and ([p truth-values]
-              [q truth-values]
-              [r truth-values])
+  (define-syntax-parser define-and-check-by-enumeration
+    ; TODO: problem with that is `raco test` reports wrong line number
+    [(_ (f:id arg ...) body:expr)
+     #'(begin
+         (define (f arg ...) body)
+         (check-true
+           (check-by-enumeration
+               (f arg ...))))])
+
+  (let ()
+    (define-and-check-by-enumeration (test-expr p q r)
       (eq?
         {p ∧ {q ∧ r}}
         (and/tvl* p q r)))))
@@ -113,10 +132,8 @@
     [else 'f]))
 
 (module+ test
-  (check-true
-    (for/and ([p truth-values]
-              [q truth-values]
-              [r truth-values])
+  (let ()
+    (define-and-check-by-enumeration (test-expr p q r)
       (eq?
         {p ∨ {q ∨ r}}
         (or/tvl* p q r)))))
@@ -132,6 +149,17 @@
   [f t t]
   [f f t])
 
+(define-truth-table {p ⇔ q}
+  [t t t]
+  [t b b]
+  [t f f]
+  [b t b]
+  [b b b]
+  [b f f]
+  [f t f]
+  [f b f]
+  [f f t])
+
 ; material implication
 (define-truth-table {p ⊃ q}
   [t t t]
@@ -144,20 +172,11 @@
   [f b t]
   [f f t])
 
-(define-truth-table {p ⇔ q}
-  [t t t]
-  [t b b]
-  [t f f]
-  [b t b]
-  [b b b]
-  [b f f]
-  [f t f]
-  [f b f]
-  [f f t])
-
 ; equivalence based on material implication
 (define-truth-table {p ≡ q}
   ; if one is both then both
+  ; else if all same then true
+  ; else false
   [t t t]
   [t b b]
   [t f f]
@@ -168,14 +187,39 @@
   [f b b]
   [f f t])
 
+(define (material-equiv/tvl* . vs)
+  (cond
+    [(and (member 'b vs) (not (and (member 't vs) (member 'f vs)))) 'b] ; only 'b
+    [(not (and (member 't vs) (member 'f vs))) 't]  ; all 't or all 'f
+    [else 'f]))
+
 (module+ test
-  (check-true
-    (for/and ([p truth-values]
-              [q truth-values]
-              [r truth-values])
-      (eq?
-        {{p ≡ q} ∧ {q ≡ r}}
-        {{p ⊃ q} ∧ {{q ⊃ r} ∧ {r ⊃ p}}}))))
+  (local
+    [(define (test-expr-1 p q r)
+       (eq?
+         (designated-value (and/tvl* {p ≡ q} {q ≡ r} {r ≡ p}))
+         (designated-value (and/tvl* {p ⊃ q} {q ⊃ r} {r ⊃ p}))))
+     (define (test-expr-2 p q r)
+       (eq?
+         (designated-value (and/tvl* {p ≡ q} {q ≡ r} {r ≡ p}))
+         (designated-value (material-equiv/tvl* p q r))))
+     (define (test-expr-3 p q r)
+       (or
+         (not (designated-value {{p ≡ q} ∧ {q ≡ r}}))
+         (designated-value {p ≡ r})))
+     (define (test-expr-4 p q r s)
+       (eq?
+         (designated-value (and/tvl* {p ≡ q} {p ≡ s} {p ≡ r} {q ≡ r} {q ≡ s}  {r ≡ s}))
+         (designated-value (material-equiv/tvl* p q r s))))
+     ]
+    (check-true
+      (check-by-enumeration (test-expr-1 p q r)))
+    (check-true
+      (check-by-enumeration (test-expr-2 p q r)))
+    (check-true
+      (check-by-enumeration (test-expr-3 p q r)))
+    (check-true
+      (check-by-enumeration (test-expr-4 p q r s)))))
 
 (define-truth-table (¬ p)
   [t f]
@@ -196,3 +240,126 @@
   [t f]
   [b t]
   [f f])
+
+;; We now check some equation given in the book
+
+(module+ test
+
+(define-and-check-by-enumeration (eq-18.3.1 p)
+    (eq?
+      (¬ (¬ p))
+      p))
+(define-and-check-by-enumeration (eq-18.3.2 p q)
+    (eq?
+      {p ∨ q}
+      (¬ {(¬ p) ∧ (¬ q)})))
+(define-and-check-by-enumeration (eq-18.3.3 p q)
+    (eq?
+      {p ∧ q}
+      (¬ {(¬ p) ∨ (¬ q)})))
+(define-and-check-by-enumeration (eq-18.3.4 a b)
+    (eq?
+      {a ⊃ b}
+      {(¬ a) ∨ b}))
+(define-and-check-by-enumeration (eq-18.3.5 p)
+    (eq?
+      {p ⊃ 'f}
+      (¬ p)))
+(define-and-check-by-enumeration (eq-18.3.6.1 p q)
+    (eq?
+      {p ≡ q}
+      {{p ⊃ q} ∧ {q ⊃ p}}))
+(define-and-check-by-enumeration (eq-18.3.6.2 p q)
+    (eq?
+      {p ≡ q}
+      {{(¬ p) ∨ q} ∧ {p ∨ (¬ q)}}))
+
+(define-and-check-by-enumeration (eq-18.3.7.1 p q)
+    (eq?
+      {p ⇒ q}
+      {(◇ p) ⊃ q}))
+(define-and-check-by-enumeration (eq-18.3.7.2 p q)
+    (eq?
+      {p ⇒ q}
+      {(□ (¬ p)) ∨ q}))
+
+(define-and-check-by-enumeration (eq-18.3.8 p q)
+    (eq?
+      {p ⇔ q}
+      {{p ⇒ q} ∧ {q ⇒ p}}))
+
+(define-and-check-by-enumeration (eq-18.3.9.1 p)
+    (eq?
+      (□ p)
+      (¬ (◇ (¬ p)))))
+(define-and-check-by-enumeration (eq-18.3.9.2 p)
+    (eq?
+      (□ p)
+      {(¬ p) ⇒ 'f}))
+
+(define-and-check-by-enumeration (eq-18.3.10.1 p)
+    (eq?
+      (◇ p)
+      (¬ (□ (¬ p)))))
+(define-and-check-by-enumeration (eq-18.3.10.2 p)
+    (eq?
+      (◇ p)
+      (¬ {p ⇒ 'f})))
+(define-and-check-by-enumeration (eq-18.3.10.3 p)
+    (eq?
+      (◇ p)
+      {{p ⇒ 'f} ⇒ 'f}))
+
+(define-and-check-by-enumeration (eq-18.3.11.1 p)
+    (eq?
+      (B p)
+      (◇ {p ∧ (¬ p)})))
+(define-and-check-by-enumeration (eq-18.3.11.2 p)
+    (eq?
+      (B p)
+      {(◇ p) ∧ (◇ (¬ p))}))
+(define-and-check-by-enumeration (eq-18.3.11.3 p)
+    (eq?
+      (B p)
+      {(◇ p) ∧ (¬ (□ p))}))
+
+(define-and-check-by-enumeration (eq-18.3.12 p)
+    (eq?
+      (□ (◇ p))
+      (◇ p)))
+
+(define-and-check-by-enumeration (eq-18.3.13 p q)
+    (eq?
+      (◇ {p ⇒ q})
+      {(◇ p) ⇒ (◇ q)}))
+
+(define-and-check-by-enumeration (eq-18.3.13.1 p q)
+    (eq?
+      (□ {p ∧ q})
+      {(□ p) ∧ (□ q)}))
+(define-and-check-by-enumeration (eq-18.3.13.2 p q)
+    (eq?
+      (□ {p ∨ q})
+      {(□ p) ∨ (□ q)}))
+(define-and-check-by-enumeration (eq-18.3.13.3 p q)
+    (eq?
+      (◇ {p ∧ q})
+      {(◇ p) ∧ (◇ q)}))
+(define-and-check-by-enumeration (eq-18.3.13.4 p q)
+    (eq?
+      (◇ {p ∨ q})
+      {(◇ p) ∨ (◇ q)}))
+
+(define-and-check-by-enumeration (eq-18.2.7.1 p q)
+    (eq?
+      {p ⊃ q}
+      {(¬ q) ⊃ (¬ p)}))
+
+(define-and-check-by-enumeration (eq-18.4.12.1 p q r)
+    (eq?
+      {p ⊃ {q ⊃ r}}
+      {{p ∧ q} ⊃ r}))
+(define-and-check-by-enumeration (eq-18.4.12.2 p q r)
+    (eq?
+      {p ⇒ {q ⇒ r}}
+      {{p ∧ q} ⇒ r})))
