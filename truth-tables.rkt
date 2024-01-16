@@ -189,9 +189,9 @@
 
 (define (material-equiv/tvl* . vs)
   (cond
-    [(and (member 'b vs) (not (and (member 't vs) (member 'f vs)))) 'b] ; only 'b
-    [(not (and (member 't vs) (member 'f vs))) 't]  ; all 't or all 'f
-    [else 'f]))
+    [(and (member 't vs) (member 'f vs)) 'f]
+    [(member 'b vs) 'b]
+    [else 't]))
 
 (module+ test
   (local
@@ -201,22 +201,22 @@
          (designated-value (and/tvl* {p ⊃ q} {q ⊃ r} {r ⊃ p}))))
      (define (test-expr-2 p q r)
        (eq?
-         (designated-value (and/tvl* {p ≡ q} {q ≡ r} {r ≡ p}))
-         (designated-value (material-equiv/tvl* p q r))))
+         (and/tvl* {p ≡ q} {q ≡ r} {r ≡ p})
+         (material-equiv/tvl* p q r)))
      (define (test-expr-3 p q r)
        (or
          (not (designated-value {{p ≡ q} ∧ {q ≡ r}}))
          (designated-value {p ≡ r})))
      (define (test-expr-4 p q r s)
        (eq?
-         (designated-value (and/tvl* {p ≡ q} {p ≡ s} {p ≡ r} {q ≡ r} {q ≡ s}  {r ≡ s}))
-         (designated-value (material-equiv/tvl* p q r s))))
+         (and/tvl* {p ≡ q} {p ≡ s} {p ≡ r} {q ≡ r} {q ≡ s}  {r ≡ s})
+         (material-equiv/tvl* p q r s)))
      ]
-    (check-true
+    (check-false
       (check-by-enumeration (test-expr-1 p q r)))
     (check-true
       (check-by-enumeration (test-expr-2 p q r)))
-    (check-true
+    (check-false
       (check-by-enumeration (test-expr-3 p q r)))
     (check-true
       (check-by-enumeration (test-expr-4 p q r s)))))
