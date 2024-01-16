@@ -1,16 +1,15 @@
-#lang rosette/safe
+#lang racket
 
 (require
   "tvl-verification.rkt"
   "truth-tables.rkt"
   syntax/parse/define
   (for-syntax
+    racket
     "qset2.rkt"
     "stellarbeat.rkt"
     racket/syntax
     racket/pretty))
-
-; TODO: dump smt file to see how big it gets
 
 (provide
   check-intertwined
@@ -20,7 +19,7 @@
   ; TODO: display non-intertwined points if check fails
   (define points-to-check (dict-keys data))
   (define qset-map
-    (flatten-qsets (collapse-orgs data)))
+    (flatten-qsets (collapse-qsets data)))
   ; (println (format "there are ~v points" (length (dict-keys qset-map))))
   ; (println (format "there are ~v points to check are intertwined" (length points-to-check)))
   ; (pretty-print data)
@@ -46,33 +45,31 @@
       (define k (qset-threshold q))
       (define bs (combinations (set->list (qset-validators q)) (+ (- n k) 1))) ; blocking sets
       (define (blocking-fmla b polarity)
-        #`(and/tvl*
+        #`(and/tvl* ; TODO ellipsis
             #,@(for/fold
                  ([acc #'('t)])
                  ([p b])
                  #`(#,@acc #,(polarity (dict-ref symbols-map p))))))
       (define (blocked polarity)
-        #`(or/tvl*
+        #`(or/tvl* ; TODO ellipsis
             #,@(for/fold
                  ([acc #'('f)])
                  ([b bs])
                  #`(#,@acc #,(blocking-fmla b polarity)))))
       (define conj-blocked-points
-        #`(and/tvl*
+        #`(and/tvl* ; TODO ellipsis
            #,@(for/fold
                 ([acc #'('t)])
                 ([p ps])
                 #`(#,@acc #,(polarity (dict-ref symbols-map p))))))
       #`(⇒ #,(blocked polarity) #,conj-blocked-points))
     (with-syntax*
-      ([equivs
-         #`(and/tvl*
-             #,@(for/fold
-                  ([acc #'('t)])
-                  ([p points-to-check]
-                   [q (append (cdr points-to-check) (list (car points-to-check)))])
-                  #`(#,@acc (⊃ #,(dict-ref symbols-map p) #,(dict-ref symbols-map q)))))]
-       [ax
+      ([(pt ...) (for/list ([p points-to-check])
+                   (dict-ref symbols-map p))]
+       [equivs
+         ; NOTE: we _cannot_ use a cycle of ⊃ (unsound!)
+         #'(material-equiv/tvl* pt ...)]
+       [ax ; TODO ellipsis
          #`(and/tvl*
              #,@(for/fold
                   ([acc #'('t)])
@@ -85,7 +82,7 @@
                   #`(#,@acc #,(closedAx2 q ps identity) #,(closedAx2 q ps negate))))]
        [fmla
          #'(⇒ ax equivs)])
-      ; uncomment to print the axioms
+      ; uncomment to print the final formula
       ; (println "done building fmla")
       ; (pretty-print (syntax->datum #'fmla))
       #'(begin
