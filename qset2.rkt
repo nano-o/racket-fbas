@@ -1,20 +1,52 @@
 #lang racket
 (require
-  (only-in racket/hash hash-union!)
+  (only-in racket/hash hash-union! hash-union)
   #;racket/trace
-  racket/pretty)
+  racket/pretty
+  racket/generic)
 
 (provide
-  (struct-out qset)
-  qset/kw
-  flatten-qsets
-  collapse-qsets
-  invert-qset-map)
+  (contract-out
+    [node/c contract?]
+    [qset/c contract?]
+    [stellar-network/c contract?]
+    [struct qset
+      ((threshold exact-positive-integer?)
+       (validators (set/c node/c #:cmp 'eqv))
+       (inner-qsets (set/c any/c #:cmp 'equal)))]
+    [qset/kw
+      (->
+        #:threshold exact-positive-integer?
+        #:validators (set/c node/c #:cmp 'eqv)
+        #:inner-qsets (set/c any/c #:cmp 'equal)
+        qset?)]
+    [flatten-qsets (-> stellar-network/c stellar-network/c)]
+    [collapse-qsets (-> stellar-network/c stellar-network/c)])
+  invert-qset-map
+  nodes-without-qset
+  add-missing-qsets)
 
-(define-struct qset (threshold validators inner-qsets) #:prefab)
+; a node is something for which eqv? is semantic equivalence, i.e. interned symbols, numbers, and characters.
+(define node/c
+  (or/c boolean? (and/c symbol? (or/c symbol-interned? symbol-unreadable?)) number? char?))
+
+; validators must be a seteqv
+; inner-qsets must be a set
+(define-struct qset (threshold validators inner-qsets) #:transparent)
 
 (define (qset/kw #:threshold t #:validators vs #:inner-qsets qs)
   (qset t vs qs))
+
+(define (qset-elements q)
+  (set-union
+    (for/set ([v (qset-validators q)]) v)
+    (qset-inner-qsets q)))
+
+(define (qset/c q)
+  (struct/dc qset
+             [threshold (and/c (< 0 (qset-threshold q)) (<= (qset-threshold q) (set-count (qset-elements q))))]
+             [validators (set/c node/c #:cmp 'eqv)]
+             [inner-qsets (set/c qset/c #:cmp 'equal)]))
 
 (module+ test
   (require rackunit)
@@ -48,7 +80,7 @@
           qset-3
           (qset/kw #:threshold 2 #:validators (seteqv 2 1 3 1) #:inner-qsets (set)))))))
 
-(define (inner-qsets-rec qset)
+(define (reachable-inner-qsets qset)
   (define iqs
     (qset-inner-qsets qset))
   (set-union
@@ -56,125 +88,165 @@
     (for/fold
       ([acc (set)])
       ([iq (in-set iqs)])
-      (set-union acc (inner-qsets-rec iq)))))
+      (set-union acc (reachable-inner-qsets iq)))))
 
 (module+ test
   (check-equal?
     (qset-inner-qsets qset-6)
     (set (qset 2 (seteqv 'z 'y 'x) (set)) (qset 2 (seteqv 'a 'b 'c) (set)) (qset 2 (seteqv 1 2 3) (set)))))
 
-(define (flatten-qsets qset-map)
+(define (nodes-in-qset q)
+  (set-union
+    (qset-validators q)
+    (apply
+      set-union
+      (cons (seteqv) ; to avoid an empty list
+            (for/list ([iq (qset-inner-qsets q)])
+              (nodes-in-qset iq))))))
+
+(define (network-members network)
+  (apply
+    set-union
+    (cons (seteqv) ; to avoid an empty list
+          (for/list ([(_ q) (in-dict network)])
+            (nodes-in-qset q)))))
+
+(define (nodes-without-qset network)
+  (set-subtract
+    (network-members network)
+    (apply seteqv (dict-keys network))))
+
+(define (no-nodes-with-no-qset network)
+  (set-empty? (nodes-without-qset network)))
+
+(define stellar-network/c
+  (and/c
+    (listof (cons/c node/c qset/c)) ; association list; why not hash?
+    no-nodes-with-no-qset))
+
+(module+ test
+  (check-false
+    (stellar-network/c `((p . ,qset-1)))))
+
+(define (add-missing-qsets network)
+  (append
+    network
+    (for/list ([n (nodes-without-qset network)])
+      (cons
+        n
+        (qset/kw
+          #:threshold 1
+          #:validators (seteqv n)
+          #:inner-qsets (set))))))
+
+(define-generics symbol-generator
+  (gen-get-symbol symbol-generator v))
+(define-struct my-sym-gen (prefix [count #:mutable] [syms #:mutable])
+  #:methods gen:symbol-generator
+  [(define (gen-get-symbol g v)
+     (if (dict-has-key? (my-sym-gen-syms g) v)
+       (dict-ref (my-sym-gen-syms g) v)
+       (begin
+         (set-my-sym-gen-count! g (+ (my-sym-gen-count g) 1))
+         (let ()
+           (define sym (string->unreadable-symbol (format "~a-gen-sym-~a" (my-sym-gen-prefix g) (my-sym-gen-count g))))
+           (set-my-sym-gen-syms! g (dict-set (my-sym-gen-syms g) v sym))
+           sym))))])
+
+(define (flatten-qsets network)
   ; builds a new qset configuration that has quorum-intersection if and only if the original one has it, and where no quorumset has any inner quorum sets.
-  (define (qset-symbol q)
-    (string->unreadable-symbol (~v (equal-hash-code q))))
-  (define new-qset-map
-    (make-hash qset-map)) ; this is mutable
-  (define (flatten q) ; NOTE: mutates new-qset-map!
-    (define flattened-iqs
-      (for/set ([iq (in-set (qset-inner-qsets q))])
-        (flatten iq)))
-    (define new-points
-      (for/hash ([fiq flattened-iqs])
-        (values (qset-symbol fiq) fiq))) ; it's okay if it already exists in new-qset-map
-    (hash-union!
-      new-qset-map
-      new-points
-      #:combine/key (λ (k v1 v2) v1)) ; NOTE: mutation!
-    (qset/kw ; we remove the inner qsets and add corresponding points
+  (define sym-gen (my-sym-gen "flatten-qsets" 0 null))
+  (define inner-qsets
+    (apply
+      set-union
+      (set)
+      (for/list ([q (apply set (dict-values network))])
+        (reachable-inner-qsets q))))
+  (define (flatten q)
+    (define new-validators
+      (for/seteqv ([iq (qset-inner-qsets q)])
+        (gen-get-symbol sym-gen iq)))
+    (qset/kw
       #:threshold (qset-threshold q)
-      #:validators (set-union (qset-validators q) (apply seteqv (dict-keys new-points)))
+      #:validators (set-union (qset-validators q) new-validators)
       #:inner-qsets (set)))
-  (for ([(p qset) (in-dict qset-map)])
-    (hash-set! new-qset-map p (flatten qset))) ; NOTE: mutates new-qset-map!
-  ; finally, return an alist:
-  (for/list ([(q qs) (in-dict new-qset-map)])
-    (cons q qs)))
+  (define existing
+    (for/list ([(p q) (in-dict network)])
+      (cons p (flatten q))))
+  (define new
+    (for/list ([q inner-qsets])
+      (cons (gen-get-symbol sym-gen q) (flatten q))))
+  (append existing new))
 
 (module+ test
   (check-true
     (for/and ([q (dict-values (flatten-qsets `((p . ,qset-6))))])
       (set-empty? (qset-inner-qsets q)))))
 
-(define (collapse-qsets qset-map)
-  ; TODO: we could identify groups of qsets that "intersect" and whose members don't appear anywhere else and have the same qset, and collapse them all to the same point.
-  ; TODO: print info about what cannot be collapsed? Could attach info about orgs a struct property
+(define (collapse-qsets network)
+  (define sym-gen (my-sym-gen "collapse-qsets" 0 null))
+  (define qsets
+    (set-union
+      (apply set (dict-values network))
+      (apply
+        set-union
+        (cons
+          (set)
+          (for/list ([q (dict-values network)])
+            (reachable-inner-qsets q))))))
   (define (collapsible? q)
     ; a qset can be collapsed to a point when:
     ;   * it does not have inner qsets
     ;   * its threshold is greater than 1/2
     ;   * its members do not appear anywhere except in this very qset
     ;   * its members all have the same qset
-    ; TODO don't collapse if singleton? Unlikely to happen in practice.
-    (define (overlaps-q q2)
-      (and
-        (not (equal? q q2))
-        (or
-          (not
-            (set-empty?
-              (set-intersect (qset-validators q2) (qset-validators q))))
-          (for/or ([q3 (qset-inner-qsets q2)])
-            (overlaps-q q3)))))
     (and
       (for/and ([v (qset-validators q)])
         (equal?
-          (dict-ref qset-map v)
-          (dict-ref qset-map (car (set->list (qset-validators q))))))
+          (dict-ref network v)
+          (dict-ref network (car (set->list (qset-validators q))))))
       (set-empty? (qset-inner-qsets q))
       (> (* 2 (qset-threshold q)) (set-count (qset-validators q)))
-      (not
-        (for/or ([(_ q2) (in-dict qset-map)])
-          (overlaps-q q2)))))
+      (for/and ([q2 (in-set qsets)])
+        (or (equal? q q2)
+            (set-empty? (set-intersect (qset-validators q) (qset-validators q2)))))))
   ; first, identify all the qsets to collapse
   ; second, collapse their occurences
   ; finally, give the new points their qsets
   (define to-collapse
-    (let ()
-      (define (to-collapse q)
-        (cond
-          [(collapsible? q) (set q)]
-          [(not (set-empty? (qset-inner-qsets q)))
-           (apply
-             set-union
-             (for/list ([iq (in-set (qset-inner-qsets q))])
-               (to-collapse iq)))]
-          [else (set)]))
-      (apply
-        set-union
-        (for/list ([q (dict-values qset-map)])
-          (to-collapse q)))))
-  (pretty-print (format "number of qsets to collapse: ~a" (set-count to-collapse)))
-  (define result
-    (make-hash qset-map)) ; mutable copy of qset-map
-  (define (qset-symbol q) ; creats a symbol for a qset
-    (string->unreadable-symbol (~v (equal-hash-code q))))
+    (apply set (filter collapsible? (set->list qsets))))
   (define (collapse q)
     (if (set-member? to-collapse q)
-      (qset/kw
-        #:threshold 1
-        #:validators (seteqv (qset-symbol q))
-        #:inner-qsets (set))
-      (let ()
+      (begin
         (qset/kw
-          #:threshold (qset-threshold q)
-          #:validators (set-union
-                         (qset-validators q)
-                         (for/seteqv ([q2 (set-intersect (qset-inner-qsets q) to-collapse)])
-                            (qset-symbol q2)))
-          #:inner-qsets (set-subtract
-                          (qset-inner-qsets q)
-                          to-collapse)))))
-  (for ([(p q) (in-hash result)])
-    (hash-set! result p (collapse q)))
-  ; it remains to give the new points their qsets
-  (for ([q to-collapse])
-    (hash-set!
-      result
-      (qset-symbol q)
-      ; note it's important to use result:
-      (dict-ref result (car (set->list (qset-validators q))))))
-  ; finally, we return an alist:
-  (for/list ([(p q) (in-hash result)])
-    (cons p q)))
+          #:threshold 1
+          #:validators (seteqv (gen-get-symbol sym-gen q))
+          #:inner-qsets (set)))
+      (let ()
+        (define collapsed
+          (qset/kw
+            #:threshold (qset-threshold q)
+            #:validators (set-union
+                           (qset-validators q)
+                           (for/seteqv ([q2 (in-set (set-intersect (qset-inner-qsets q) to-collapse))])
+                                       (gen-get-symbol sym-gen q2)))
+            #:inner-qsets (for/set
+                            ([q2 (in-set
+                                   (set-subtract
+                                     (qset-inner-qsets q)
+                                     to-collapse))])
+                            (collapse q2))))
+          collapsed)))
+  (define existing-points
+    (for/list ([(p q) (in-dict network)])
+      (cons p (collapse q))))
+  (define new-points
+    (for/list ([q to-collapse])
+      (cons
+        (gen-get-symbol sym-gen q)
+        ; we give the new validator, which corresponds to an old qset q, the qsets of the validators in q (they all have the same qset)
+        (dict-ref existing-points (car (set->list (qset-validators q)))))))
+  (append new-points existing-points))
 
 (module+ test
   (check-not-exn (thunk (collapse-qsets `(,(cons 'p qset-6)))))
