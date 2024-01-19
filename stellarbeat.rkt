@@ -4,11 +4,13 @@
   json
   net/url
   "qset2.rkt"
-  #;racket/trace)
+  racket/trace)
 
 (provide
-  get-stellar-network
-  get-stellar-top-tier)
+  ; get-stellar-top-tier
+  (contract-out
+    [get-network-from-file (-> string? stellar-network/c)]
+    [get-stellar-network (-> stellar-network/c)]))
 
 (define/contract (network-info url-string)
   (-> string? hash?)
@@ -16,9 +18,23 @@
   (define resp (get-pure-port url #:redirections 5))
   (read-json resp))
 
-(define (quorum-sets info)
+(define (get-network-from-file f)
+  ; f must contain an array of nodes
+  (define f-contents
+    (with-input-from-file f read-json))
+  (define nodes
+    (if (hash? f-contents)
+      (hash-ref f-contents 'nodes)
+      f-contents))
+  (define network
+    (hash->conf (quorum-sets nodes)))
+  (unless (set-empty? (nodes-without-qset network))
+    (println (format "some nodes do not have a qset assigned: ~v" (nodes-without-qset network))))
+  (add-missing-qsets network))
+
+(define (quorum-sets nodes)
   (for/hash
-    ([n (hash-ref info 'nodes)]
+    ([n nodes]
      #:when (and
               (hash-has-key? n 'publicKey)
               (hash-has-key? n 'quorumSet)
@@ -31,7 +47,11 @@
 (define (get-stellar-network)
   (define info
     (network-info stellarbeat-url-string))
-  (hash->conf (quorum-sets info)))
+  (define network
+    (hash->conf (quorum-sets (hash-ref info 'nodes))))
+  (unless (set-empty? (nodes-without-qset network))
+    (println (format "some nodes do not have a qset assigned: ~v" (nodes-without-qset network))))
+  (add-missing-qsets network))
 
 (define (hash->qset h)
   (qset/kw
@@ -42,6 +62,7 @@
 
 (define (hash->conf h)
   ; we return an alist
+  ; TODO: why?
   (for/list ([(n q) (in-hash h)])
     (cons (string->symbol n) (hash->qset q))))
 
@@ -66,12 +87,13 @@
 (define (get-stellar-top-tier-qsets)
   (define info
     (network-info stellarbeat-url-string))
+  (define nodes (quorum-sets (hash-ref info 'nodes)))
   (define current-top-tier-org-names
   '("Stellar Development Foundation" "Public Node" "Whalestack LLC" "SatoshiPay" "LOBSTR" "Blockdaemon Inc." "Franklin Templeton"))
   (define current-top-tier-nodes
     (top-tier-nodes info current-top-tier-org-names))
   (for/hash ([n current-top-tier-nodes])
-    (values n (hash-ref (quorum-sets info) n))))
+    (values n (hash-ref (quorum-sets nodes) n))))
 
 (define (get-stellar-top-tier)
   (hash->conf (get-stellar-top-tier-qsets)))
