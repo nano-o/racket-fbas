@@ -1,4 +1,4 @@
-#lang racket
+#lang rosette ; TODO: do we need this here?
 
 (require
   "tvl-verification.rkt"
@@ -15,17 +15,16 @@
   check-intertwined
   check-intertwined/stellarbeat)
 
-(define-for-syntax (check-intertwined/datum data)
+; TODO Bottleneck seems to be symbolic execution. So this leaves us Yoni's method.
+
+(define-for-syntax (check-intertwined/datum network)
   ; TODO: display non-intertwined points if check fails
-  (define points-to-check (dict-keys data))
-  (define qset-map
-    (flatten-qsets (collapse-qsets data)))
-  ; (println (format "there are ~v points" (length (dict-keys qset-map))))
-  ; (println (format "there are ~v points to check are intertwined" (length points-to-check)))
-  ; (pretty-print data)
+  (define points-to-check (dict-keys network))
+  (define flattened-network
+    (flatten-qsets (collapse-qsets network)))
   ; collect all points
   (define points
-    (dict-keys qset-map))
+    (dict-keys flattened-network))
   ; now we need to create the formula
   (with-syntax
     ([fmla-fn (format-id #'name "~a-intertwined?" #'name)] ; symbol for the function we define
@@ -39,47 +38,40 @@
     (define (negate p)
       (with-syntax ([p p])
         #'(¬ p)))
-    ; NOTE: The following only works if there are no inner quorumsets (it's okay since, above, we have flattened the qsets)
-    (define (closedAx2 q ps polarity) ; all points must have qset q
+    ; NOTE: The following assumes the network is flat (no inner quorumsets)
+    (define (closedAx q ps apply-polarity) ; all points in ps must have qset q
       (define n (set-count (qset-validators q)))
       (define k (qset-threshold q))
       (define bs (combinations (set->list (qset-validators q)) (+ (- n k) 1))) ; blocking sets
-      (define (blocking-fmla b polarity)
-        #`(and/tvl* ; TODO ellipsis
-            #,@(for/fold
-                 ([acc #'('t)])
-                 ([p b])
-                 #`(#,@acc #,(polarity (dict-ref symbols-map p))))))
-      (define (blocked polarity)
-        #`(or/tvl* ; TODO ellipsis
-            #,@(for/fold
-                 ([acc #'('f)])
-                 ([b bs])
-                 #`(#,@acc #,(blocking-fmla b polarity)))))
+      (define (blocked-by b)
+        (with-syntax
+          ([(lit ...) (for/list ([p b]) (apply-polarity (dict-ref symbols-map p)))])
+          #'(∧* lit ...)))
+      (define blocked
+        (with-syntax
+          ([(bby ...) (for/list ([b bs]) (blocked-by b))])
+          #'(∨* bby ...)))
       (define conj-blocked-points
-        #`(and/tvl* ; TODO ellipsis
-           #,@(for/fold
-                ([acc #'('t)])
-                ([p ps])
-                #`(#,@acc #,(polarity (dict-ref symbols-map p))))))
-      #`(⇒ #,(blocked polarity) #,conj-blocked-points))
+        (with-syntax
+          ([(lit ...) (for/list ([p ps]) (apply-polarity (dict-ref symbols-map p)))])
+          #'(∧* lit ...)))
+      #`(⇒ #,blocked #,conj-blocked-points))
     (with-syntax*
       ([(pt ...) (for/list ([p points-to-check])
                    (dict-ref symbols-map p))]
        [equivs
-         ; NOTE: we _cannot_ use a cycle of ⊃ (unsound!)
-         #'(material-equiv/tvl* pt ...)]
-       [ax ; TODO ellipsis
-         #`(and/tvl*
-             #,@(for/fold
-                  ([acc #'('t)])
-                  ([(q ps) (in-dict (invert-qset-map qset-map))]
-                   #:when (not
+         ; NOTE: we _cannot_ use a cycle of ⊃ (it's unsound in tvl!)
+         #'(≡* pt ...)]
+       [(closedAx ...)
+        (for*/list
+          ([(q ps) (in-dict (invert-qset-map flattened-network))]
+                   #:when (not ; skip trivial qsets
                             (and
                               (equal? (qset-validators q) (seteqv (car ps)))
-                              (equal? (length ps) 1))))
-                  ; (pretty-print ps)
-                  #`(#,@acc #,(closedAx2 q ps identity) #,(closedAx2 q ps negate))))]
+                              (equal? (length ps) 1)))
+           [polarity (list identity negate)])
+          (closedAx q ps polarity))]
+       [ax #'(∧* closedAx ...)]
        [fmla
          #'(⇒ ax equivs)])
       ; uncomment to print the final formula
@@ -103,7 +95,8 @@
 (define-syntax (check-intertwined/stellarbeat stx)
   (syntax-parse stx
     [(_)
-     (define network (get-stellar-network))
-     ; (define network (get-stellar-top-tier))
-     (check-intertwined/datum network)
-     #;(check-intertwined/datum network (dict-keys network))]))
+     (define network (get-network-from-file "/home/nano/Documents/python-fbas/almost_symmetric_network_13_orgs.json"))
+     #;(define network (get-network-from-file "test.json"))
+     #;(define network (get-stellar-network))
+     #;(define network (get-stellar-top-tier))
+     (check-intertwined/datum network)]))
