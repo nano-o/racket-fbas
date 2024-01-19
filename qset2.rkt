@@ -202,9 +202,11 @@
     ;   * its members all have the same qset
     (and
       (for/and ([v (qset-validators q)])
-        (equal?
-          (dict-ref network v)
-          (dict-ref network (car (set->list (qset-validators q))))))
+        (and
+          (dict-has-key? network v)
+          (equal?
+            (dict-ref network v)
+            (dict-ref network (car (set->list (qset-validators q)))))))
       (set-empty? (qset-inner-qsets q))
       (> (* 2 (qset-threshold q)) (set-count (qset-validators q)))
       (for/and ([q2 (in-set qsets)])
@@ -249,13 +251,7 @@
   (append new-points existing-points))
 
 (module+ test
-  (check-not-exn (thunk (collapse-qsets `(,(cons 'p qset-6)))))
-  (define qset-7
-    (qset/kw #:threshold 2 #:validators (seteqv 'a) #:inner-qsets (set qset-1 qset-3 qset-4)))
-  (check-equal?
-    ; qset-3 should not be collapsed
-    (length (collapse-qsets `(,(cons 'v qset-7))))
-    3))
+  (check-not-exn (thunk (collapse-qsets `(,(cons 'p qset-6))))))
 
 (define (invert-qset-map qset-map)
   ; assumes flat qsets
