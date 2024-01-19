@@ -1,5 +1,7 @@
 ;; In this file we define the semantics of logical operations of the three-valued logic by giving their truth tables
 
+; TODO: look at https://stackoverflow.com/questions/16571447/using-one-set-of-unit-tests-on-many-different-files-in-racket to run the same tests on both the rosette checker and the exhaustive checker
+
 ; We use the rosette/safe language to enable symbolic execution
 ; We use the sweet-exp language mixin to enable infix operators in logical formulas
 #lang sweet-exp rosette/safe
@@ -15,7 +17,7 @@
 
 (provide
   ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B ; These are the logical connectives
-  and/tvl* or/tvl* material-equiv/tvl*
+  ∧* ∨* ≡*
   designated-value)
 
 ; The logical values are 't, 'b, and 'f (true, both, and false)
@@ -78,7 +80,7 @@
   [f f f])
 
 ; A shorthand for writing big conjunctions:
-(define (and/tvl* . vs)
+(define (∧* . vs)
   (cond
     [(member 'f vs) 'f]
     [(member 'b vs) 'b]
@@ -111,7 +113,7 @@
     (define-and-check-by-enumeration (test-expr p q r)
       (eq?
         {p ∧ {q ∧ r}}
-        (and/tvl* p q r)))))
+        (∧* p q r)))))
 
 (define-truth-table {p ∨ q}
   [t t t]
@@ -125,7 +127,7 @@
   [f f f])
 
 ; a shorthand for writing big disjunctions
-(define (or/tvl* . vs)
+(define (∨* . vs)
   (cond
     [(member 't vs) 't]
     [(member 'b vs) 'b]
@@ -136,7 +138,7 @@
     (define-and-check-by-enumeration (test-expr p q r)
       (eq?
         {p ∨ {q ∨ r}}
-        (or/tvl* p q r)))))
+        (∨* p q r)))))
 
 (define-truth-table {p ⇒ q}
   [t t t]
@@ -187,7 +189,7 @@
   [f b b]
   [f f t])
 
-(define (material-equiv/tvl* . vs)
+(define (≡* . vs)
   (cond
     [(and (member 't vs) (member 'f vs)) 'f]
     [(member 'b vs) 'b]
@@ -197,20 +199,20 @@
   (local
     [(define (test-expr-1 p q r)
        (eq?
-         (designated-value (and/tvl* {p ≡ q} {q ≡ r} {r ≡ p}))
-         (designated-value (and/tvl* {p ⊃ q} {q ⊃ r} {r ⊃ p}))))
+         (designated-value (∧* {p ≡ q} {q ≡ r} {r ≡ p}))
+         (designated-value (∧* {p ⊃ q} {q ⊃ r} {r ⊃ p}))))
      (define (test-expr-2 p q r)
        (eq?
-         (and/tvl* {p ≡ q} {q ≡ r} {r ≡ p})
-         (material-equiv/tvl* p q r)))
+         (∧* {p ≡ q} {q ≡ r} {r ≡ p})
+         (≡* p q r)))
      (define (test-expr-3 p q r)
        (or
          (not (designated-value {{p ≡ q} ∧ {q ≡ r}}))
          (designated-value {p ≡ r})))
      (define (test-expr-4 p q r s)
        (eq?
-         (and/tvl* {p ≡ q} {p ≡ s} {p ≡ r} {q ≡ r} {q ≡ s}  {r ≡ s})
-         (material-equiv/tvl* p q r s)))
+         (∧* {p ≡ q} {p ≡ s} {p ≡ r} {q ≡ r} {q ≡ s}  {r ≡ s})
+         (≡* p q r s)))
      ]
     (check-false
       (check-by-enumeration (test-expr-1 p q r)))
