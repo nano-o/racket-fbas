@@ -2,6 +2,7 @@
 
 (require
   "intersection-checker.rkt"
+  "qset2.rkt"
   (for-syntax "qset2.rkt"))
 
 (module+ test
