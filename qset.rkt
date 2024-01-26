@@ -211,7 +211,8 @@
       (> (* 2 (qset-threshold q)) (set-count (qset-validators q)))
       (for/and ([q2 (in-set qsets)])
         (or (equal? q q2)
-            (set-empty? (set-intersect (qset-validators q) (qset-validators q2)))))))
+            (set-empty? (set-intersect (qset-validators q) (qset-validators q2)))))
+      (> (set-count (qset-validators q)) 1)))
   ; first, identify all the qsets to collapse
   ; second, collapse their occurences
   ; finally, give the new points their qsets
