@@ -1,12 +1,19 @@
-#lang rosette/safe
+#lang rosette
 
 (require
   "intersection-checker.rkt"
-  "qset2.rkt"
-  (for-syntax "qset2.rkt"))
+  "qset.rkt"
+  racket/pretty
+  (for-syntax "qset.rkt"))
 
 (module+ test
   (require rackunit)
+  (pretty-print
+    (intertwined-characteristic-formula
+      `((p . ,(qset 1 (seteqv 'q) (set)))
+        (q . ,(qset 1 (seteqv 'q) (set)))))))
+
+(module+ test
   (check-true
     (sat? (check-intertwined
       `((p . ,(qset 1 (seteqv 'p) (set)))

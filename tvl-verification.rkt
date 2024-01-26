@@ -26,8 +26,7 @@
   [(_ (f:id arg ...))
    (with-syntax
      ([(arg/bv ...) ; symbols for tvl symbolic variables
-       (for/list ([arg (syntax->list #'(arg ...))])
-         (format-id #'arg "~a/bv" (syntax->datum arg)))])
+       (generate-temporaries #'(arg ...))])
      #'(let () ; we use let to hide the following definitions from the outer scope
          (define-symbolic arg/bv ... (bitvector 2))
          (define arg (bv-to-3 arg/bv)) ...

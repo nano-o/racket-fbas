@@ -1,16 +1,17 @@
-#lang errortrace rosette ; TODO: do we need this here?
+#lang rosette
 
 (require
   "tvl-verification.rkt"
   "truth-tables.rkt"
   syntax/parse/define
   "qset.rkt"
-  "stellarbeat.rkt"
+  ; "stellarbeat.rkt"
   (for-syntax
     racket
     "qset.rkt"
     "stellarbeat.rkt"
     racket/syntax
+    syntax/datum
     racket/pretty))
 
 (provide
@@ -19,9 +20,11 @@
   intertwined-characteristic-formula)
 
 ; TODO Bottleneck seems to be symbolic execution. So this leaves us Yoni's method.
+; We can skip symbolic execution and still use Rosette's solver-check function to interface with Z3
+; That still requires a macro to generate the formula
 
-; TODO might be easier just to produce a datum and then use datum->syntax
-
+; creates a datum representing the formula
+; this could just call syntax->datum on the syntax version
 (define (intertwined-characteristic-formula network)
   (define points-to-check (dict-keys network))
   (define flattened-network
@@ -56,6 +59,8 @@
                      (closedAx q ps polarity))))
   `(=> ,ax (≡* ,@(for/list ([p points-to-check]) (dict-ref symbols-map p)))))
 
+; If we want to generate the fmla in a separate module then we need to pass in the map from symbol to symbolic variables. Otherwise we cannot create symbolic variables with the right lexical context.
+; should we eval this?
 (define-for-syntax (check-intertwined/datum network)
   ; TODO: display non-intertwined points if check fails
   (define points-to-check (dict-keys network))
@@ -68,11 +73,10 @@
   (with-syntax
     ([fmla-fn (format-id #'name "~a-intertwined?" #'name)] ; symbol for the function we define
      [(p ...) ; symbols for the tvl variables
-      (for/list ([p points])
-        (format-id #'() "~a" p))])
+      (generate-temporaries points)])
     (define symbols-map
       (for/list ([p/datum points]
-                 [p/syntax (syntax->list #'(p ...))])
+                 [p/syntax (datum (p ...))])
         (cons p/datum p/syntax)))
     (define (negate p)
       (with-syntax ([p p])
@@ -119,7 +123,6 @@
       ; (println "done building fmla")
       ; (pretty-print (syntax->datum #'fmla))
       #'(begin
-          #;(define name wst)
           (let ()
             (define (fmla-fn p ...) fmla)
             (verify-valid/tvl (fmla-fn p ...)))))))
@@ -128,16 +131,14 @@
   (syntax-parse stx
     [(_ qsets:expr)
      ; NOTE we need a separate module to pass to eval-syntax
-     #;(println "data:")
      (define data (eval-syntax #'qsets (module->namespace "qset.rkt")))
-     #;(pretty-print data)
      (check-intertwined/datum data)]))
 
 (define-syntax (check-intertwined/stellarbeat stx)
   (syntax-parse stx
     [(_)
      #;(define network (get-network-from-file "/home/nano/Documents/python-fbas/almost_symmetric_network_13_orgs.json"))
-     (define network (get-network-from-file "test.json"))
-     #;(define network (get-stellar-network))
+     #;(define network (get-network-from-file "test.json"))
+     (define network (get-stellar-network))
      #;(define network (get-stellar-top-tier))
      (check-intertwined/datum network)]))
