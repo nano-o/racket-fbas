@@ -1,6 +1,7 @@
 #lang racket
 
 (require
+  "truth-tables.rkt"
   racket/generator)
 
 (provide
@@ -19,6 +20,35 @@
   `(&& ,(car p) ,(cdr p)))
 (define (is-b p)
   `(|| (&& (! ,(car p)) ,(cdr p)) (&& ,(car p) (! ,(cdr p)))))
+
+(define (is-tv v)
+  (case v
+    [(t) is-t]
+    [(b) is-b]
+    [(f) is-f]))
+
+(define (encode-¬ p q)
+  `(||
+     (&& ,(is-f q) ,(is-t p))
+     (&& ,(is-b q) ,(is-b p))
+     (&& ,(is-t q) ,(is-f p)))) ; encodes "p is not q"
+
+(define (encode-∧ p q1 q2) ; encodes "p is the conjunction of q1 and q2"
+  `(|| ,@(for*/list ([v1 truth-values]
+                     [v2 truth-values])
+           `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (∧ v1 v2)) p)))))
+(define (encode-∨ p q1 q2)
+  `(|| ,@(for*/list ([v1 truth-values]
+                     [v2 truth-values])
+           `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (∨ v1 v2)) p)))))
+(define (encode-⇒ p q1 q2)
+  `(|| ,@(for*/list ([v1 truth-values]
+                     [v2 truth-values])
+           `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (⇒ v1 v2)) p)))))
+(define (encode-≡ p q1 q2)
+  `(|| ,@(for*/list ([v1 truth-values]
+                     [v2 truth-values])
+           `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (≡ v1 v2)) p)))))
 
 (define (encode-∧* p qs) ; encodes "p is the conjunction of all the qs"
   (define one-f
@@ -50,12 +80,6 @@
      (&& (! ,one-t-one-f) ,one-b ,(is-b p))
      (&& (! ,one-t-one-f) (! ,one-b) ,(is-t p))))
 
-(define (encode-¬ p q)
-  `(||
-     (&& ,(is-f q) ,(is-t p))
-     (&& ,(is-b q) ,(is-b p))
-     (&& ,(is-t q) ,(is-f p)))) ; encodes "p is not q"
-
 ; TODO: we should probably avoid creating boolean variables for formulas we have seen already
 ; TODO: could be done tail recursive: create vars for subformulas, create constraint, pass vars to recursive call
 (define (valid?/3to2 fmla)
@@ -78,6 +102,14 @@
     (set-add! vars (cdr f+-))
     (define constraint
       (match f
+        [`(∧ ,q1 ,q2)
+          (encode-∧ f+- (3to2-rec q1) (3to2-rec q2))]
+        [`(∨ ,q1 ,q2)
+          (encode-∨ f+- (3to2-rec q1) (3to2-rec q2))]
+        [`(⇒ ,q1 ,q2)
+          (encode-⇒ f+- (3to2-rec q1) (3to2-rec q2))]
+        [`(≡ ,q1 ,q2)
+          (encode-≡ f+- (3to2-rec q1) (3to2-rec q2))]
         [`(∧* ,q ...)
           (encode-∧* f+- (map 3to2-rec q))]
         [`(∨* ,q ...)
