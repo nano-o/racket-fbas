@@ -33,6 +33,7 @@
 (define test-fmla-1 '(≡* p (¬ (¬ p))))
 (define test-fmla-2 '(≡* (∨* p q) (¬ (∧* (¬ p) (¬ q)))))
 (define test-fmla-3 '(≡* (∧* p q) (¬ (∨* (¬ p) (¬ q)))))
+(define test-fmla-4 '(∧* (∨* (¬ p) p) (∨* p (¬ p))))
 #;(with-output-to-file #:exists 'replace "debug.txt"
   (thunk
     (pretty-write
@@ -44,5 +45,5 @@
   (thunk
     (pretty-write
         (eval
-          (verify-solver/datum test-fmla-2)
+          (verify-solver/datum test-fmla-4)
           (module->namespace 'rosette)))))
