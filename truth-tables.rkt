@@ -113,7 +113,8 @@
     (define-and-check-by-enumeration (test-expr p q r)
       (eq?
         {p ∧ {q ∧ r}}
-        (∧* p q r)))))
+        (∧* p q r)))
+    (check-equal? (∧*) 't)))
 
 (define-truth-table {p ∨ q}
   [t t t]
@@ -138,7 +139,8 @@
     (define-and-check-by-enumeration (test-expr p q r)
       (eq?
         {p ∨ {q ∨ r}}
-        (∨* p q r)))))
+        (∨* p q r)))
+    (check-equal? (∨*) 'f)))
 
 (define-truth-table {p ⇒ q}
   [t t t]
@@ -176,9 +178,6 @@
 
 ; equivalence based on material implication
 (define-truth-table {p ≡ q}
-  ; if one is both then both
-  ; else if all same then true
-  ; else false
   [t t t]
   [t b b]
   [t f f]
