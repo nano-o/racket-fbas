@@ -21,9 +21,9 @@
 
 ; TODO Bottleneck seems to be symbolic execution. So this leaves us Yoni's method.
 ; We can skip symbolic execution and still use Rosette's solver-check function to interface with Z3
-; That still requires a macro to generate the formula
 
 ; creates a datum representing the formula
+; returns a pair consisting of the variables and the formula
 ; this could just call syntax->datum on the syntax version
 (define (intertwined-characteristic-formula network)
   (define points-to-check (dict-keys network))
@@ -48,7 +48,7 @@
       `(∧* ,@(for/list ([p b]) (polarity (dict-ref symbols-map p)))))
     (define blocked
       `(∨* ,@(for/list ([b bs]) (blocked-by b))))
-    `(=> ,blocked (∧* ,@(for/list ([p ps]) (polarity (dict-ref symbols-map p))))))
+    `(⇒ ,blocked (∧* ,@(for/list ([p ps]) (polarity (dict-ref symbols-map p))))))
   (define ax
     `(∧* ,@(for/list ([(q ps) (in-dict (invert-qset-map flattened-network))]
                           #:when (not ; skip trivial qsets
@@ -57,7 +57,9 @@
                                      (equal? (length ps) 1)))
                           [polarity (list identity negate)])
                      (closedAx q ps polarity))))
-  `(=> ,ax (≡* ,@(for/list ([p points-to-check]) (dict-ref symbols-map p)))))
+  (define fmla
+    `(⇒ ,ax (≡* ,@(for/list ([p points-to-check]) (dict-ref symbols-map p)))))
+  `(,(dict-keys flattened-network) . ,fmla))
 
 ; If we want to generate the fmla in a separate module then we need to pass in the map from symbol to symbolic variables. Otherwise we cannot create symbolic variables with the right lexical context.
 ; should we eval this?
