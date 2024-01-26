@@ -14,6 +14,7 @@
 (provide
   ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B ; These are the logical connectives
   ∧* ∨* ≡* ; versions of the connectives that take lists of logical values
+  truth-values
   designated-value)
 
 ; NOTE => (rosette) is not ⇒
