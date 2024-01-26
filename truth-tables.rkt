@@ -8,15 +8,16 @@
   syntax/parse/define
   (only-in racket for*/and)
   racket/local
-  racket/pretty
   (for-syntax
-    syntax/to-string
     racket/syntax))
 
 (provide
   ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B ; These are the logical connectives
-  ∧* ∨* ≡*
+  ∧* ∨* ≡* ; versions of the connectives that take lists of logical values
   designated-value)
+
+; NOTE => (rosette) is not ⇒
+; NOTE <=> (rosette) is not ⇔
 
 ; The logical values are 't, 'b, and 'f (true, both, and false)
 (define truth-values '(t b f))
