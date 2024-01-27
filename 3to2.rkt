@@ -7,6 +7,7 @@
 
 (provide
   t-or-b?
+  equiv-fmlas?
   debug) ; given a tvl formula, generates a boolean formula that is valid if and only if the original tvl formula is valid
 
 ; The idea is that, for each sub-formula f, we create two boolean variables f- and f+ that encode the tvl truth value of the formula (i.e. 00 is 'f, 01 and 10 is 'b, and 11 is 't). Then we just apply the truth tables to express the truth value of a formula in terms of the truth value of its subformulas.
@@ -51,7 +52,6 @@
                      [v2 truth-values])
            `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (≡ v1 v2)) p)))))
 
-; TODO: just recurse?
 (define (encode-∧* p qs) ; encodes "p is the conjunction of all the qs"
   (define one-f
     `(|| ,@(map is-f qs)))
@@ -126,7 +126,6 @@
   (define p (3to2-rec fmla))
   (define constraint
     `(&& ,@(set->list cs)))
-  ; (pretty-print constraint)
   `(,p ,vars . ,constraint))
 
 (define (t-or-b? fmla)
@@ -134,5 +133,80 @@
   ; finally, return the variables and the constraint
   (define constraint
     `(=> ,c (|| ,(is-t p) ,(is-b p))))
-  ; (pretty-print constraint)
   `(,vars . ,constraint))
+
+(define (equiv-fmlas? f1 f2)
+  (match-define `(,p1 ,vars1 . ,c1) (3to2 f1))
+  (match-define `(,p2 ,vars2 . ,c2) (3to2 f2))
+  (define constraint
+    `(=>
+       (&& ,c1 ,c2)
+       (&&
+         (<=> ,(is-t p1) ,(is-t p2))
+         (<=> ,(is-f p1) ,(is-f p2))
+         (<=> ,(is-b p1) ,(is-b p2)))))
+ ; NOTE this relies on the fact that the boolean variables representing the base tvl variable are the same in both c1 and c2
+  `(,(set-union (set) vars1 vars2) . ,constraint)) ; (set) because of https://github.com/racket/racket/issues/2583
+
+(module+ verification
+
+  (require rosette)
+  (provide
+    verify-valid
+    verify-equiv-fmlas)
+
+  (define (make-verify-encoded-fmla vars constraints)
+    ; this is meant to be evaluated in the context of the rosette module
+    `(begin
+       (define-symbolic ,@(set->list vars) boolean?)
+       (define solver (current-solver))
+       (solver-assert solver (list (! ,constraints)))
+       (define sol (solver-check solver))
+       (solver-clear solver)
+       sol))
+
+  (define (verify-valid fmla)
+    (match-define `(,vars . ,constraints)
+      (parameterize ([debug #f]) (t-or-b? fmla)))
+    (eval (make-verify-encoded-fmla vars constraints) (module->namespace 'rosette)))
+
+  (define (verify-equiv-fmlas f1 f2)
+    (match-define `(,vars . ,constraints)
+      (parameterize ([debug #f]) (equiv-fmlas? f1 f2)))
+    (eval (make-verify-encoded-fmla vars constraints) (module->namespace 'rosette))))
+
+
+(module+ test
+  (require
+    (submod ".." verification)
+    rackunit
+    rosette)
+
+  (define (equiv? f1 f2)
+    (not (sat? (verify-equiv-fmlas f1 f2))))
+  (define (valid? f)
+    (not (sat? (verify-valid f))))
+
+  (check-true (valid? '(≡ p (¬ (¬ p)))))
+  (check-true (equiv? 'p '(¬ (¬ p))))
+
+  (define test-fmla-2 '(≡ (∨ p q) (¬ (∧ (¬ p) (¬ q)))))
+  (check-true (valid? test-fmla-2))
+
+  (define test-fmla-3 '(≡ (∧ p q) (¬ (∨ (¬ p) (¬ q)))))
+  (check-true (valid? test-fmla-3))
+
+  (define test-fmla-4 '(∧ (∨ (¬ p) p) (∨ p (¬ p))))
+  (check-true (valid? test-fmla-4))
+
+  (define test-fmla-5 '(∨ p (¬ p)))
+  (check-true (valid? test-fmla-5))
+
+  (define test-fmla-6 '(∧ p (¬ p)))
+  (check-false (valid? test-fmla-6))
+
+  ; TODO: fails
+  (define test-fmla-7 '(∧* (∨* (¬ p) p) (∨* p (¬ p))))
+  (check-true (valid? test-fmla-7))
+
+  (check-true (equiv? '{≡ p  q} '{∧ {∨ (¬ p)  q} {∨ p (¬ q)}})))
