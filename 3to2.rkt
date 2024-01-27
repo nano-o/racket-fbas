@@ -8,7 +8,9 @@
 (provide
   t-or-b?
   equiv-fmlas?
-  debug) ; given a tvl formula, generates a boolean formula that is valid if and only if the original tvl formula is valid
+  debug)
+
+ ; given a tvl formula, generates a boolean formula that is valid if and only if the original tvl formula is valid
 
 ; The idea is that, for each sub-formula f, we create two boolean variables f- and f+ that encode the tvl truth value of the formula (i.e. 00 is 'f, 01 and 10 is 'b, and 11 is 't). Then we just apply the truth tables to express the truth value of a formula in terms of the truth value of its subformulas.
 
@@ -52,7 +54,36 @@
                      [v2 truth-values])
            `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (≡ v1 v2)) p)))))
 
+(define (rewrite-big-ops f)
+  ; rewrite the * ops
+  (match f
+    [`(∧* ,q ...)
+      (match q
+        [`(,qs ...) #:when (> (length qs) 2)
+                    `(∧ ,(car (rewrite-big-ops qs)) ,(rewrite-big-ops `(∧* ,(cdr qs))))]
+        [`(,q1 ,q2) `(∧ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+        [`(,q1) (rewrite-big-ops q1)])]
+        ['() #t]
+    [`(∨* ,q ...)
+      (match q
+        [`(,qs ...) #:when (> (length qs) 2)
+                    `(∨ ,(car (rewrite-big-ops qs)) ,(rewrite-big-ops `(∨* ,(cdr qs))))]
+        [`(,q1 ,q2) `(∨ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+        [`(,q1) (rewrite-big-ops q1)])]
+        ['() #f]
+    [`(≡* ,q ...)
+      (match q
+        [`(,qs ...) #:when (> (length qs) 2)
+                    `(≡ ,(car (rewrite-big-ops qs)) ,(rewrite-big-ops `(≡* ,(cdr qs))))]
+        [`(,q1 ,q2) `(≡ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+        [`(,q1) (rewrite-big-ops q1)])]
+        ['() (raise (error "empty equivalence is not supported"))] ; TODO: what should this be?
+    [f f]))
+
+; TODO: those next three seem wrong...
+
 (define (encode-∧* p qs) ; encodes "p is the conjunction of all the qs"
+  (raise (error "do not use: buggy"))
   (define one-f
     `(|| ,@(map is-f qs)))
   (define one-b
@@ -63,6 +94,7 @@
      (&& (! ,one-f) (! ,one-b)) ,(is-t p)))
 
 (define (encode-∨* p qs) ; encodes "p is the disjunction of all the qs"
+  (raise (error "do not use: buggy"))
   (define one-t
     `(|| ,@(map is-t qs)))
   (define one-b
@@ -73,6 +105,7 @@
      (&& (! ,one-t) (! ,one-b) ,(is-f p))))
 
 (define (encode-≡* p qs) ; encodes "p is the equivalence of all the qs"
+  (raise (error "do not use: buggy"))
   (define one-t-one-f
     `(&& (|| ,@(map is-f qs)) (|| ,@(map is-t qs))))
   (define one-b
@@ -123,7 +156,7 @@
         [(? symbol?) #t]))
     (set-add! cs constraint)
     f+-)
-  (define p (3to2-rec fmla))
+  (define p (3to2-rec (rewrite-big-ops fmla)))
   (define constraint
     `(&& ,@(set->list cs)))
   `(,p ,vars . ,constraint))
@@ -205,7 +238,6 @@
   (define test-fmla-6 '(∧ p (¬ p)))
   (check-false (valid? test-fmla-6))
 
-  ; TODO: fails
   (define test-fmla-7 '(∧* (∨* (¬ p) p) (∨* p (¬ p))))
   (check-true (valid? test-fmla-7))
 
