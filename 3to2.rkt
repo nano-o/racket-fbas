@@ -2,10 +2,11 @@
 
 (require
   "truth-tables.rkt"
-  racket/generator)
+  racket/generator
+  racket/match)
 
 (provide
-  valid?/3to2
+  t-or-b?
   debug) ; given a tvl formula, generates a boolean formula that is valid if and only if the original tvl formula is valid
 
 ; The idea is that, for each sub-formula f, we create two boolean variables f- and f+ that encode the tvl truth value of the formula (i.e. 00 is 'f, 01 and 10 is 'b, and 11 is 't). Then we just apply the truth tables to express the truth value of a formula in terms of the truth value of its subformulas.
@@ -50,6 +51,7 @@
                      [v2 truth-values])
            `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (≡ v1 v2)) p)))))
 
+; TODO: just recurse?
 (define (encode-∧* p qs) ; encodes "p is the conjunction of all the qs"
   (define one-f
     `(|| ,@(map is-f qs)))
@@ -82,7 +84,7 @@
 
 ; TODO: we should probably avoid creating boolean variables for formulas we have seen already
 ; TODO: could be done tail recursive: create vars for subformulas, create constraint, pass vars to recursive call
-(define (valid?/3to2 fmla)
+(define (3to2 fmla)
   (define sym-gen
     (generator ()
       (let loop ([i 0])
@@ -122,10 +124,15 @@
     (set-add! cs constraint)
     f+-)
   (define p (3to2-rec fmla))
+  (define constraint
+    `(&& ,@(set->list cs)))
+  ; (pretty-print constraint)
+  `(,p ,vars . ,constraint))
+
+(define (t-or-b? fmla)
+  (match-define `(,p ,vars . ,c) (3to2 fmla))
   ; finally, return the variables and the constraint
   (define constraint
-    `(=> (&& ,@(set->list cs)) (|| ,(is-t p) ,(is-b p))))
+    `(=> ,c (|| ,(is-t p) ,(is-b p))))
   ; (pretty-print constraint)
   `(,vars . ,constraint))
-
-; (pretty-print (valid?/3to2 '(∧* a b)))

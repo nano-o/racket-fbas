@@ -8,7 +8,7 @@
 (define (verify/syntax fmla)
   ; TODO: how to get syntax context right?
   (match-define `(,vars . ,constraint)
-    (valid?/3to2 fmla))
+    (t-or-b? fmla))
   (with-syntax
     ([(v ...) (for/list ([v vars]) (format-id #'() "~a" v))])
     #`(begin
@@ -17,14 +17,14 @@
 
 (define (verify/datum fmla)
   (match-define `(,vars . ,constraint)
-    (parameterize ([debug #t]) (valid?/3to2 fmla)))
+    (parameterize ([debug #t]) (t-or-b? fmla)))
   `(begin
      (define-symbolic ,@(set->list vars) boolean?)
      (verify (assert ,constraint))))
 
 (define (verify-solver/datum fmla)
   (match-define `(,vars . ,constraint)
-    (parameterize ([debug #f]) (valid?/3to2 fmla)))
+    (parameterize ([debug #f]) (t-or-b? fmla)))
   `(begin
      (define-symbolic ,@(set->list vars) boolean?)
      (define solver (current-solver))
