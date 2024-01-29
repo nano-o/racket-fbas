@@ -56,29 +56,41 @@
 
 (define (rewrite-big-ops f)
   ; rewrite the * ops
+  ; looks like something for nanopass
   (match f
+    [`(∧ ,q1 ,q2)
+      `(∧ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    [`(∨ ,q1 ,q2)
+      `(∨ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    [`(⇒ ,q1 ,q2)
+      `(⇒ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    [`(≡ ,q1 ,q2)
+      `(≡ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    [`(¬ ,q)
+      `(¬ ,(rewrite-big-ops q))]
+    [(and sym (? symbol?)) sym]
     [`(∧* ,q ...)
       (match q
         [`(,qs ...) #:when (> (length qs) 2)
-                    `(∧ ,(car (rewrite-big-ops qs)) ,(rewrite-big-ops `(∧* ,(cdr qs))))]
+                    `(∧ ,(rewrite-big-ops (car qs)) ,(rewrite-big-ops `(∧* ,@(cdr qs))))]
         [`(,q1 ,q2) `(∧ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
         [`(,q1) (rewrite-big-ops q1)])]
         ['() #t]
     [`(∨* ,q ...)
       (match q
         [`(,qs ...) #:when (> (length qs) 2)
-                    `(∨ ,(car (rewrite-big-ops qs)) ,(rewrite-big-ops `(∨* ,(cdr qs))))]
+                    `(∨ ,(rewrite-big-ops (car qs)) ,(rewrite-big-ops `(∨* ,@(cdr qs))))]
         [`(,q1 ,q2) `(∨ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
         [`(,q1) (rewrite-big-ops q1)])]
         ['() #f]
     [`(≡* ,q ...)
       (match q
         [`(,qs ...) #:when (> (length qs) 2)
-                    `(≡ ,(car (rewrite-big-ops qs)) ,(rewrite-big-ops `(≡* ,(cdr qs))))]
+                    `(≡ ,(rewrite-big-ops (car qs)) ,(rewrite-big-ops `(≡* ,@(cdr qs))))]
         [`(,q1 ,q2) `(≡ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
         [`(,q1) (rewrite-big-ops q1)])]
         ['() (raise (error "empty equivalence is not supported"))] ; TODO: what should this be?
-    [f f]))
+    [x raise (error (format "unhandled case: ~a" x))]))
 
 ; TODO: those next three seem wrong...
 
@@ -119,6 +131,7 @@
 ; TODO: could be done tail recursive: create vars for subformulas, create constraint, pass vars to recursive call
 (define (3to2 fmla)
   (define sym-gen
+    ; TODO make sure we don't clash with existing symbols in the fmla
     (generator ()
       (let loop ([i 0])
         (yield (string->unreadable-symbol (~a i)))
@@ -145,20 +158,21 @@
           (encode-⇒ f+- (3to2-rec q1) (3to2-rec q2))]
         [`(≡ ,q1 ,q2)
           (encode-≡ f+- (3to2-rec q1) (3to2-rec q2))]
+        [`(¬ ,q)
+          (encode-¬ f+- (3to2-rec q))]
+        [(? symbol?) #t]
         [`(∧* ,q ...)
           (encode-∧* f+- (map 3to2-rec q))]
         [`(∨* ,q ...)
           (encode-∨* f+- (map 3to2-rec q))]
         [`(≡* ,q ...)
-          (encode-≡* f+- (map 3to2-rec q))]
-        [`(¬ ,q)
-          (encode-¬ f+- (3to2-rec q))]
-        [(? symbol?) #t]))
+          (encode-≡* f+- (map 3to2-rec q))]))
     (set-add! cs constraint)
     f+-)
   (define p (3to2-rec (rewrite-big-ops fmla)))
   (define constraint
     `(&& ,@(set->list cs)))
+  (println "finished generating fmla")
   `(,p ,vars . ,constraint))
 
 (define (t-or-b? fmla)
@@ -182,6 +196,8 @@
   `(,(set-union (set) vars1 vars2) . ,constraint)) ; (set) because of https://github.com/racket/racket/issues/2583
 
 (module+ verification
+
+  ; TODO: translate diretly to smtlib instead of using eval...
 
   (require rosette)
   (provide
