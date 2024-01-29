@@ -5,16 +5,18 @@
   racket/pretty
   racket/generic)
 
+; TODO: use mutable sets and hashes because of https://github.com/racket/racket/issues/4899
+
 (provide
   (contract-out
     [node/c contract?]
     [qset/c contract?]
     [stellar-network/c contract?]
-    [struct qset
+    [struct qset ; TODO: does this impose undue overhead?
       ((threshold exact-positive-integer?)
        (validators (set/c node/c #:cmp 'eqv))
        (inner-qsets (set/c any/c #:cmp 'equal)))]
-    [qset/kw
+    [qset/kw ; TODO: does this impose undue overhead?
       (->
         #:threshold exact-positive-integer?
         #:validators (set/c node/c #:cmp 'eqv)

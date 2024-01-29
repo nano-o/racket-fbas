@@ -1,4 +1,4 @@
-;; In this file we define the semantics of logical operations of the three-valued logic by giving their truth tables
+;; In this file we define functions (∧, ∨, ¬, etc.) that implement the logical operations of the three-valued logic
 
 ; We use the rosette/safe language to enable symbolic execution
 ; We use the sweet-exp language mixin to enable infix operators in logical formulas
