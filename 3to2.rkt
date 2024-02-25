@@ -6,6 +6,7 @@
   racket/match)
 
 (provide
+  3to2
   t-or-b?
   equiv-fmlas?
   debug)
@@ -13,6 +14,7 @@
  ; given a tvl formula, generates a boolean formula that is valid if and only if the original tvl formula is valid
 
 ; The idea is that, for each sub-formula f, we create two boolean variables f- and f+ that encode the tvl truth value of the formula (i.e. 00 is 'f, 01 and 10 is 'b, and 11 is 't). Then we just apply the truth tables to express the truth value of a formula in terms of the truth value of its subformulas.
+; TODO if we go with the terminology f- and f+ then we should have 10 is f, 01 is t, and 11/00 is b
 
 ; NOTE we better use rosette's &&, ||, etc. (and not `and`, `or`, etc) to get the classical logical operations
 
@@ -25,17 +27,34 @@
 (define (is-b p)
   `(|| (&& (! ,(car p)) ,(cdr p)) (&& ,(car p) (! ,(cdr p)))))
 
+(module+ test
+  (require rackunit)
+  (check-equal?
+    (is-f '(p . q))
+    '(&& (! p) (! q))))
+
+; returns a function that checks whether its argument (a pair) is the 3vl value v
 (define (is-tv v)
   (case v
     [(t) is-t]
     [(b) is-b]
     [(f) is-f]))
 
+(module+ test
+  (check-equal?
+    ((is-tv 'f) '(p . q))
+    '(&& (! p) (! q))))
+
 (define (encode-¬ p q)
   `(||
      (&& ,(is-f q) ,(is-t p))
      (&& ,(is-b q) ,(is-b p))
      (&& ,(is-t q) ,(is-f p)))) ; encodes "p is not q"
+
+(module+ test
+  (check-equal?
+    (encode-¬ '(f1+ . f1-) '(f2+ . f2-))
+    'todo))
 
 (define (encode-∧ p q1 q2) ; encodes "p is the conjunction of q1 and q2"
   `(|| ,@(for*/list ([v1 truth-values]
@@ -195,7 +214,7 @@
  ; NOTE this relies on the fact that the boolean variables representing the base tvl variable are the same in both c1 and c2
   `(,(set-union (set) vars1 vars2) . ,constraint)) ; (set) because of https://github.com/racket/racket/issues/2583
 
-(module+ verification
+#;(module+ verification
 
   ; TODO: translate diretly to smtlib instead of using eval...
 
@@ -225,10 +244,9 @@
     (eval (make-verify-encoded-fmla vars constraints) (module->namespace 'rosette))))
 
 
-(module+ test
+#;(module+ test
   (require
     (submod ".." verification)
-    rackunit
     rosette)
 
   (define (equiv? f1 f2)
