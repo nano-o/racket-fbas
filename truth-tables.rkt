@@ -1,8 +1,8 @@
 ;; In this file we define functions (∧, ∨, ¬, etc.) that implement the logical operations of the three-valued logic
 
-; We use the rosette/safe language to enable symbolic execution
+; We use the rosette language to enable symbolic execution
 ; We use the sweet-exp language mixin to enable infix operators in logical formulas
-#lang sweet-exp rosette/safe
+#lang sweet-exp rosette
 
 (require
   syntax/parse/define
@@ -64,7 +64,7 @@
        #'(define (operation arg ...)
          (case (list arg ...)
            [((value ...)) (quote result)] ...
-           [else 'error])))]))
+           #;[else 'error])))]))
 
 ; A macro to check an equivalence by exhaustive enumeration
 (define-syntax-parser always-#t?
@@ -234,6 +234,37 @@
   [t f]
   [b t]
   [f f])
+
+;; Evaluator for formulas
+
+(define-syntax-parser make-evaluator
+  [(_
+     #:name f
+     #:unary (uo ...)
+     #:binary (bo ...)
+     #:nary (no ...))
+  #`(define (f env fmla)
+      (match fmla
+        [`(uo ,e) (uo (f env e))]
+        ...
+        [`(bo ,e1 ,e2) (bo (f env e1) (f env e2))]
+        ...
+        [`(no ,e (... ...)) (no (map (λ (e) (f env e)) e))] ; NOTE (... ...) is a quoted ellipsis
+        ...
+        [v
+          #:when (member v truth-values)
+          v]
+        [v
+          #:when (symbol? v)
+          (dict-ref env v)]))])
+
+(make-evaluator
+  #:name eval/3
+  #:unary (¬ ◇ □ B)
+  #:binary (∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B)
+  #:nary (∧* ∨* ≡*))
+
+;; TODO given a formula as a datum, check whether it is valid
 
 ;; We now check some equation given in the book
 
