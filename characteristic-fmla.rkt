@@ -3,7 +3,7 @@
 ; Functions to generate the formula that characterizes the intertwinedness of a qset configuration.
 
 (require
-  "tvl-verification.rkt"
+  ; "tvl-verification.rkt"
   "truth-tables.rkt"
   syntax/parse/define
   "qset.rkt"

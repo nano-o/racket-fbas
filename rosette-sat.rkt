@@ -4,6 +4,10 @@
   "truth-tables.rkt"
   syntax/parse/define)
 
+(provide
+  valid/3?
+  SAT)
+
 ;; We provide a validity checker for tvl formulas.
 
 ; we use 2 bits to represent a tvl value as a bitvector
@@ -39,14 +43,15 @@
 
 (define (valid/3? fmla)
   (begin
+    ; (gc-terms!)
     (clear-vc!)
     (clear-terms!)
     (verify (assert (designated-value? (interpret/3 fmla))))))
 
 ; (interpret '(¬ p))
 ; (with-vc (interpret '(¬ p)))
-(valid/3? '(∨ p (¬ p)))
-(valid/3? '(∨ p p))
+; (valid/3? '(∨ p (¬ p)))
+; (valid/3? '(∨ p p))
 ; (vc)
 ; (terms)
 
@@ -65,5 +70,5 @@
     (solve (assert (interpret/2 formula)))))
 
 ; (SAT '(¬ q))
-(SAT 'p)
+; (SAT 'p)
 ; (SAT `(∧ r o (∨ s e (¬ t)) t (¬ e)))
