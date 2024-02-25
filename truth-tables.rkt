@@ -15,7 +15,7 @@
   ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B ; These are the logical connectives
   ∧* ∨* ≡* ; versions of the connectives that take lists of logical values
   truth-values
-  designated-value)
+  designated-value?)
 
 ; NOTE => (rosette) is not ⇒
 ; NOTE <=> (rosette) is not ⇔
@@ -24,7 +24,7 @@
 (define truth-values '(t b f))
 
 ; 't and 'b are the designated values
-(define (designated-value v)
+(define (designated-value? v)
   (if (member v '(t b)) #t #f))
 
 ; Next we write a macro to make is easier to define truth tables
@@ -192,16 +192,16 @@
   (local
     [(define (test-expr-1 p q r)
        (eq? ; NOTE this is not true!
-         (designated-value (∧* {p ≡ q} {q ≡ r} {r ≡ p}))
-         (designated-value (∧* {p ⊃ q} {q ⊃ r} {r ⊃ p}))))
+         (designated-value? (∧* {p ≡ q} {q ≡ r} {r ≡ p}))
+         (designated-value? (∧* {p ⊃ q} {q ⊃ r} {r ⊃ p}))))
      (define (test-expr-2 p q r)
        (eq?
          (∧* {p ≡ q} {q ≡ r} {r ≡ p})
          (≡* p q r)))
      (define (test-expr-3 p q r)
        (or
-         (not (designated-value {{p ≡ q} ∧ {q ≡ r}}))
-         (designated-value {p ≡ r})))
+         (not (designated-value? {{p ≡ q} ∧ {q ≡ r}}))
+         (designated-value? {p ≡ r})))
      (define (test-expr-4 p q r s)
        (eq?
          (∧* {p ≡ q} {p ≡ s} {p ≡ r} {q ≡ r} {q ≡ s}  {r ≡ s})
