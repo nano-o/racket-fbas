@@ -11,12 +11,20 @@
 ;; We provide a validity checker for tvl formulas.
 
 ; we use 2 bits to represent a tvl value as a bitvector
+; we can think of this as first bit for false and second bit for true
 (define (bv-to-3 b)
   (cond
-    [(bveq b (bv #b11 2)) 't] ; #b11 is 't
-    [(or (bveq b (bv #b01 2)) (bveq b (bv #b10 2))) 'b] ; #b01 and #b10 both represent 'b
-    [(bveq b (bv #b00 2)) 'f])) ; #b00 is 'f
+    [(bveq b (bv #b01 2)) 't]
+    [(or (bveq b (bv #b11 2)) (bveq b (bv #b00 2))) 'b]
+    [(bveq b (bv #b10 2)) 'f]))
 
+(define (3-to-bv v)
+  (case v
+    [(t) (bv #b01 2)]
+    [(f) (bv #b10 2)]
+    [(b) (bv #b11 2)]))
+
+; interprets a formula as a Rosette term
 (define-syntax-parser make-interpreter
   [(_
      #:name f
@@ -31,6 +39,9 @@
         ...
         [`(no ,e (... ...)) (no (map f e))] ; NOTE (... ...) is a quoted ellipsis
         ...
+        [v
+          #:when (member v truth-values)
+          (3-to-bv v)]
         [v
           #:when (symbol? v)
           (bv-to-3 (constant v (bitvector 2)))]))])
