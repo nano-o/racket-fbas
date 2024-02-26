@@ -158,9 +158,11 @@
     `(|| ,@(map is-b qs)))
   `(||
      (&& ,one-f ,(is-f p))
-     (&& (! ,one-f)
-         (|| (&& ,one-b ,(is-b p))
-             (&& (! ,one-b)) ,(is-t p)))))
+     (&& (! ,one-f) ,one-b ,(is-b p))
+     (&& (! ,one-f) (! ,one-b) ,(is-t p))))
+     ; (&& (! ,one-f)
+         ; (|| (&& ,one-b ,(is-b p))
+             ; (&& (! ,one-b) ,(is-t p))))))
 
 (define (encode-∨* p qs) ; encodes "p is the disjunction of all the qs"
   (define one-t
@@ -169,9 +171,11 @@
     `(|| ,@(map is-b qs)))
   `(||
      (&& ,one-t ,(is-t p))
-     (&& (! ,one-t)
-         (|| (&& ,one-b ,(is-b p))
-             (&& (! ,one-b) ,(is-f p))))))
+     (&& (! ,one-t) ,one-b ,(is-b p))
+     (&& (! ,one-t) (! ,one-b) ,(is-f p))))
+     ; (&& (! ,one-t)
+         ; (|| (&& ,one-b ,(is-b p))
+             ; (&& (! ,one-b) ,(is-f p))))))
 
 (define (encode-≡* p qs) ; encodes "p is the equivalence of all the qs"
   (define one-t-one-f
@@ -180,9 +184,11 @@
     `(|| ,@(map is-b qs)))
   `(||
      (&& ,one-t-one-f ,(is-f p))
-     (&& (! ,one-t-one-f)
-         (|| (&& ,one-b ,(is-b p))
-             (&& (! ,one-b) ,(is-t p))))))
+     (&& (! ,one-t-one-f) ,one-b ,(is-b p))
+     (&& (! ,one-t-one-f) (! ,one-b) ,(is-t p))))
+     ; (&& (! ,one-t-one-f)
+         ; (|| (&& ,one-b ,(is-b p))
+             ; (&& (! ,one-b) ,(is-t p))))))
 
 ; TODO: we should probably avoid creating boolean variables for formulas we have seen already
 ; TODO: could be done tail recursive: create vars for subformulas, create constraint, pass vars to recursive call
@@ -191,47 +197,48 @@
   (define vars (mutable-set)) ; we'll collect boolean variables here
   (define (3to2-rec f)
     ; first we generate symbols f+ and f-
-    (define f+-
+    (define f-+
       (if (debug)
-        `(,(string->symbol (format "~a+" f)) . ,(string->symbol (format "~a-" f)))
+        `(,(string->symbol (format "~a-" f)) . ,(string->symbol (format "~a+" f)))
         (if (symbol? f)
-          `(,(string->symbol (format "~a+" f)) . ,(string->symbol (format "~a-" f)))
+          `(,(string->symbol (format "~a-" f)) . ,(string->symbol (format "~a+" f)))
           `(,(gensym) . ,(gensym)))))
-    (set-add! vars (car f+-))
-    (set-add! vars (cdr f+-))
+    (set-add! vars (car f-+))
+    (set-add! vars (cdr f-+))
     (define constraint
       (match f
-        [(? symbol?) #:when (member f truth-values) ((is-tv f) f+-)]
+        [(? symbol?) #:when (member f truth-values) ((is-tv f) f-+)]
         [(? symbol?) #t]
         [`(∧ ,q1 ,q2)
-          (encode-∧ f+- (3to2-rec q1) (3to2-rec q2))]
+          (encode-∧ f-+ (3to2-rec q1) (3to2-rec q2))]
         [`(∨ ,q1 ,q2)
-          (encode-∨ f+- (3to2-rec q1) (3to2-rec q2))]
+          (encode-∨ f-+ (3to2-rec q1) (3to2-rec q2))]
         [`(⊃ ,q1 ,q2)
-          (encode-⊃ f+- (3to2-rec q1) (3to2-rec q2))]
+          (encode-⊃ f-+ (3to2-rec q1) (3to2-rec q2))]
         [`(⇒ ,q1 ,q2)
-          (encode-⇒ f+- (3to2-rec q1) (3to2-rec q2))]
+          (encode-⇒ f-+ (3to2-rec q1) (3to2-rec q2))]
         [`(≡ ,q1 ,q2)
-          (encode-≡ f+- (3to2-rec q1) (3to2-rec q2))]
+          (encode-≡ f-+ (3to2-rec q1) (3to2-rec q2))]
         [`(⇔ ,q1 ,q2)
-          (encode-⇔ f+- (3to2-rec q1) (3to2-rec q2))]
+          (encode-⇔ f-+ (3to2-rec q1) (3to2-rec q2))]
         [`(◇ ,q)
-          (encode-◇ f+- (3to2-rec q))]
+          (encode-◇ f-+ (3to2-rec q))]
         [`(□ ,q)
-          (encode-□ f+- (3to2-rec q))]
+          (encode-□ f-+ (3to2-rec q))]
         [`(¬ ,q)
-          (encode-¬ f+- (3to2-rec q))]
+          (encode-¬ f-+ (3to2-rec q))]
         [`(B ,q)
-          (encode-B f+- (3to2-rec q))]
+          (encode-B f-+ (3to2-rec q))]
         [`(∧* ,q ...)
-          (encode-∧* f+- (map 3to2-rec q))]
+          (encode-∧* f-+ (map 3to2-rec q))]
         [`(∨* ,q ...)
-          (encode-∨* f+- (map 3to2-rec q))]
+          (encode-∨* f-+ (map 3to2-rec q))]
         [`(≡* ,q ...)
-          (encode-≡* f+- (map 3to2-rec q))]))
+          (encode-≡* f-+ (map 3to2-rec q))]))
     (set-add! cs constraint)
-    f+-)
-  (define p (3to2-rec (rewrite-big-ops fmla)))
+    f-+)
+  ; (define p (3to2-rec (rewrite-big-ops fmla)))
+  (define p (3to2-rec fmla))
   (define constraint
     `(&& ,@(set->list cs)))
   ; (println "finished generating fmla")
