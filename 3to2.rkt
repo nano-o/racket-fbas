@@ -190,51 +190,59 @@
          ; (|| (&& ,one-b ,(is-b p))
              ; (&& (! ,one-b) ,(is-t p))))))
 
-; TODO: we should probably avoid creating boolean variables for formulas we have seen already
 ; TODO: could be done tail recursive: create vars for subformulas, create constraint, pass vars to recursive call
 (define (3to2 fmla)
   (define cs (mutable-set)) ; we'll collect the constraints here
-  (define vars (mutable-set)) ; we'll collect boolean variables here
+  (define vars (mutable-set)) ; we'll collect boolean variables here TODO why?
+  (define fmla-to-vars (make-hash))
   (define (3to2-rec f)
     ; first we generate symbols f+ and f-
     (define f-+
-      (if (debug)
-        `(,(string->symbol (format "~a-" f)) . ,(string->symbol (format "~a+" f)))
-        (if (symbol? f)
-          `(,(string->symbol (format "~a-" f)) . ,(string->symbol (format "~a+" f)))
-          `(,(gensym) . ,(gensym)))))
+      (cond
+        [(debug)
+         `(,(string->symbol (format "~a-" f)) . ,(string->symbol (format "~a+" f)))]
+        [(symbol? f)
+         `(,(string->symbol (format "~a-" f)) . ,(string->symbol (format "~a+" f)))]
+        [(hash-has-key? fmla-to-vars f) (hash-ref fmla-to-vars f)]
+        [else `(,(gensym) . ,(gensym))]))
     (set-add! vars (car f-+))
     (set-add! vars (cdr f-+))
+    (when (not (hash-has-key? fmla-to-vars f))
+      (hash-set! fmla-to-vars f f-+))
+    (define (process-sub sub-f)
+      (if (hash-has-key? fmla-to-vars sub-f)
+        (hash-ref fmla-to-vars sub-f)
+        (3to2-rec sub-f)))
     (define constraint
       (match f
         [(? symbol?) #:when (member f truth-values) ((is-tv f) f-+)]
         [(? symbol?) #t]
         [`(∧ ,q1 ,q2)
-          (encode-∧ f-+ (3to2-rec q1) (3to2-rec q2))]
+          (encode-∧ f-+ (process-sub q1) (process-sub q2))]
         [`(∨ ,q1 ,q2)
-          (encode-∨ f-+ (3to2-rec q1) (3to2-rec q2))]
+          (encode-∨ f-+ (process-sub q1) (process-sub q2))]
         [`(⊃ ,q1 ,q2)
-          (encode-⊃ f-+ (3to2-rec q1) (3to2-rec q2))]
+          (encode-⊃ f-+ (process-sub q1) (process-sub q2))]
         [`(⇒ ,q1 ,q2)
-          (encode-⇒ f-+ (3to2-rec q1) (3to2-rec q2))]
+          (encode-⇒ f-+ (process-sub q1) (process-sub q2))]
         [`(≡ ,q1 ,q2)
-          (encode-≡ f-+ (3to2-rec q1) (3to2-rec q2))]
+          (encode-≡ f-+ (process-sub q1) (process-sub q2))]
         [`(⇔ ,q1 ,q2)
-          (encode-⇔ f-+ (3to2-rec q1) (3to2-rec q2))]
+          (encode-⇔ f-+ (process-sub q1) (process-sub q2))]
         [`(◇ ,q)
-          (encode-◇ f-+ (3to2-rec q))]
+          (encode-◇ f-+ (process-sub q))]
         [`(□ ,q)
-          (encode-□ f-+ (3to2-rec q))]
+          (encode-□ f-+ (process-sub q))]
         [`(¬ ,q)
-          (encode-¬ f-+ (3to2-rec q))]
+          (encode-¬ f-+ (process-sub q))]
         [`(B ,q)
-          (encode-B f-+ (3to2-rec q))]
+          (encode-B f-+ (process-sub q))]
         [`(∧* ,q ...)
-          (encode-∧* f-+ (map 3to2-rec q))]
+          (encode-∧* f-+ (map process-sub q))]
         [`(∨* ,q ...)
-          (encode-∨* f-+ (map 3to2-rec q))]
+          (encode-∨* f-+ (map process-sub q))]
         [`(≡* ,q ...)
-          (encode-≡* f-+ (map 3to2-rec q))]))
+          (encode-≡* f-+ (map process-sub q))]))
     (set-add! cs constraint)
     f-+)
   ; (define p (3to2-rec (rewrite-big-ops fmla)))
