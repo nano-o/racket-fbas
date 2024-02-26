@@ -2,7 +2,7 @@
 
 (require
   "truth-tables.rkt"
-  ; racket/trace
+  racket/trace
   racket/generator
   racket/match)
 
@@ -22,17 +22,17 @@
 (define debug (make-parameter #f))
 
 (define (is-f p)
-  `(&& (! ,(car p)) (! ,(cdr p))))
+  `(&& ,(car p) (! ,(cdr p))))
 (define (is-t p)
-  `(&& ,(car p) ,(cdr p)))
+  `(&& (! ,(car p)) ,(cdr p)))
 (define (is-b p)
-  `(|| (&& (! ,(car p)) ,(cdr p)) (&& ,(car p) (! ,(cdr p)))))
+  `(|| (&& (! ,(car p)) (! ,(cdr p))) (&& ,(car p) ,(cdr p))))
 
 (module+ test
   (require rackunit)
   (check-equal?
     (is-f '(p . q))
-    '(&& (! p) (! q))))
+    '(&& p (! q))))
 
 ; returns a function that checks whether its argument (a pair) is the 3vl value v
 (define (is-tv v)
@@ -44,7 +44,7 @@
 (module+ test
   (check-equal?
     ((is-tv 'f) '(p . q))
-    '(&& (! p) (! q))))
+    '(&& p (! q))))
 
 ; TODO macro based on trugh tables...
 (define (encode-¬ p q)
@@ -188,12 +188,6 @@
 ; TODO: we should probably avoid creating boolean variables for formulas we have seen already
 ; TODO: could be done tail recursive: create vars for subformulas, create constraint, pass vars to recursive call
 (define (3to2 fmla)
-  (define sym-gen
-    ; TODO make sure we don't clash with existing symbols in the fmla
-    (generator ()
-      (let loop ([i 0])
-        (yield (string->unreadable-symbol (~a i)))
-        (loop (+ 1 i)))))
   (define cs (mutable-set)) ; we'll collect the constraints here
   (define vars (mutable-set)) ; we'll collect boolean variables here
   (define (3to2-rec f)
@@ -203,11 +197,13 @@
         `(,(string->symbol (format "~a+" f)) . ,(string->symbol (format "~a-" f)))
         (if (symbol? f)
           `(,(string->symbol (format "~a+" f)) . ,(string->symbol (format "~a-" f)))
-          `(,(sym-gen) . ,(sym-gen)))))
+          `(,(gensym) . ,(gensym)))))
     (set-add! vars (car f+-))
     (set-add! vars (cdr f+-))
     (define constraint
       (match f
+        [(? symbol?) #:when (member f truth-values) ((is-tv f) f+-)]
+        [(? symbol?) #t]
         [`(∧ ,q1 ,q2)
           (encode-∧ f+- (3to2-rec q1) (3to2-rec q2))]
         [`(∨ ,q1 ,q2)
@@ -228,7 +224,6 @@
           (encode-¬ f+- (3to2-rec q))]
         [`(B ,q)
           (encode-B f+- (3to2-rec q))]
-        [(? symbol?) #t]
         [`(∧* ,q ...)
           (encode-∧* f+- (map 3to2-rec q))]
         [`(∨* ,q ...)
