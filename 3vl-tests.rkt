@@ -31,15 +31,30 @@
          (cons f1 f2))
        (module+ test
          #,(syntax/loc #'stx (check-true (check-eq-by-enumeration f1 f2) "not equivalent according to eval/3"))
+         #;(parameterize ([debug #t]) (pretty-print (cdr (equiv-fmlas? f1 f2))))
+         #;(parameterize ([debug #t]) (pretty-print (SAT? `(! ,(cdr (equiv-fmlas? f1 f2))))))
          #,(syntax/loc #'stx (check-true (unsat? (SAT? `(! ,(cdr (equiv-fmlas? f1 f2))))) "not equivalent according to SAT?"))
          #,(syntax/loc #'stx (check-true (unsat? (valid/3? `(eq? ,f1 ,f2))) "not equivalent according to valid/3"))))])
 
 
 ;; Those formulas should be equivalent (in the sense of evaluating to the same thing in all environments):
 
+; TODO fails with SAT?
+(check-equiv big-wedge-0
+        '{p ∧ q}
+        '(∧* p q))
+
 (check-equiv big-wedge
         '{p ∧ {q ∧ r}}
         '(∧* p q r))
+
+(check-equiv big-wedge-2
+        '{{p ∧ {q ∧ r}} ∧ s}
+        '(∧* p q r s))
+
+(check-equiv big-equiv
+        '{{p ≡ q} ∧ {{p ≡ r} ∧ {q ≡ r}}}
+        '(≡* p q r))
 
 (check-equiv big-vee
         '{p ∨ {q ∨ r}}
