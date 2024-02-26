@@ -2,6 +2,7 @@
 
 (require
   "truth-tables.rkt"
+  ; racket/trace
   racket/generator
   racket/match)
 
@@ -45,17 +46,37 @@
     ((is-tv 'f) '(p . q))
     '(&& (! p) (! q))))
 
+; TODO macro based on trugh tables...
 (define (encode-¬ p q)
   `(||
      (&& ,(is-f q) ,(is-t p))
      (&& ,(is-b q) ,(is-b p))
      (&& ,(is-t q) ,(is-f p)))) ; encodes "p is not q"
 
+(define (encode-□ p q)
+  `(||
+     (&& ,(is-f q) ,(is-f p))
+     (&& ,(is-b q) ,(is-f p))
+     (&& ,(is-t q) ,(is-t p))))
+
+(define (encode-◇ p q)
+  `(||
+     (&& ,(is-f q) ,(is-f p))
+     (&& ,(is-b q) ,(is-t p))
+     (&& ,(is-t q) ,(is-t p))))
+
+(define (encode-B p q)
+  `(||
+     (&& ,(is-f q) ,(is-f p))
+     (&& ,(is-b q) ,(is-t p))
+     (&& ,(is-t q) ,(is-f p))))
+
 (module+ test
   (check-equal?
     (encode-¬ '(f1+ . f1-) '(f2+ . f2-))
     'todo))
 
+; TODO macro
 (define (encode-∧ p q1 q2) ; encodes "p is the conjunction of q1 and q2"
   `(|| ,@(for*/list ([v1 truth-values]
                      [v2 truth-values])
@@ -72,6 +93,14 @@
   `(|| ,@(for*/list ([v1 truth-values]
                      [v2 truth-values])
            `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (≡ v1 v2)) p)))))
+(define (encode-⊃ p q1 q2)
+  `(|| ,@(for*/list ([v1 truth-values]
+                     [v2 truth-values])
+           `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (⊃ v1 v2)) p)))))
+(define (encode-⇔ p q1 q2)
+  `(|| ,@(for*/list ([v1 truth-values]
+                     [v2 truth-values])
+           `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (⇔ v1 v2)) p)))))
 
 (define (rewrite-big-ops f)
   ; rewrite the * ops
@@ -85,8 +114,18 @@
       `(⇒ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
     [`(≡ ,q1 ,q2)
       `(≡ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    [`(⇔ ,q1 ,q2)
+      `(⇔ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    [`(⊃ ,q1 ,q2)
+      `(⊃ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    [`(□ ,q)
+      `(□ ,(rewrite-big-ops q))]
+    [`(◇ ,q)
+      `(◇ ,(rewrite-big-ops q))]
     [`(¬ ,q)
       `(¬ ,(rewrite-big-ops q))]
+    [`(B ,q)
+      `(B ,(rewrite-big-ops q))]
     [(and sym (? symbol?)) sym]
     [`(∧* ,q ...)
       (match q
@@ -109,7 +148,7 @@
         [`(,q1 ,q2) `(≡ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
         [`(,q1) (rewrite-big-ops q1)])]
         ['() (raise (error "empty equivalence is not supported"))] ; TODO: what should this be?
-    [x raise (error (format "unhandled case: ~a" x))]))
+    [x (error (format "unhandled case: ~a" x))]))
 
 ; TODO: those next three seem wrong...
 
@@ -173,12 +212,22 @@
           (encode-∧ f+- (3to2-rec q1) (3to2-rec q2))]
         [`(∨ ,q1 ,q2)
           (encode-∨ f+- (3to2-rec q1) (3to2-rec q2))]
+        [`(⊃ ,q1 ,q2)
+          (encode-⊃ f+- (3to2-rec q1) (3to2-rec q2))]
         [`(⇒ ,q1 ,q2)
           (encode-⇒ f+- (3to2-rec q1) (3to2-rec q2))]
         [`(≡ ,q1 ,q2)
           (encode-≡ f+- (3to2-rec q1) (3to2-rec q2))]
+        [`(⇔ ,q1 ,q2)
+          (encode-⇔ f+- (3to2-rec q1) (3to2-rec q2))]
+        [`(◇ ,q)
+          (encode-◇ f+- (3to2-rec q))]
+        [`(□ ,q)
+          (encode-□ f+- (3to2-rec q))]
         [`(¬ ,q)
           (encode-¬ f+- (3to2-rec q))]
+        [`(B ,q)
+          (encode-B f+- (3to2-rec q))]
         [(? symbol?) #t]
         [`(∧* ,q ...)
           (encode-∧* f+- (map 3to2-rec q))]
@@ -191,7 +240,7 @@
   (define p (3to2-rec (rewrite-big-ops fmla)))
   (define constraint
     `(&& ,@(set->list cs)))
-  (println "finished generating fmla")
+  ; (println "finished generating fmla")
   `(,p ,vars . ,constraint))
 
 (define (t-or-b? fmla)
