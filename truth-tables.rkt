@@ -15,13 +15,19 @@
   ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B ; These are the logical connectives
   ∧* ∨* ≡* ; versions of the connectives that take lists of logical values
   truth-values
-  designated-value?)
+  designated-value?
+  eval/3
+  free-vars)
 
 ; NOTE => (rosette) is not ⇒
 ; NOTE <=> (rosette) is not ⇔
 
 ; The logical values are 't, 'b, and 'f (true, both, and false)
 (define truth-values '(t b f))
+
+(define uops '(¬ ◇ □ B))
+(define bops '(∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B))
+(define nops '(∧* ∨* ≡*))
 
 ; 't and 'b are the designated values
 (define (designated-value? v)
@@ -236,20 +242,21 @@
   [f f])
 
 ;; Evaluator for formulas
+;; TODO move to separate file
 
 (define-syntax-parser make-evaluator
   [(_
      #:name f
-     #:unary (uo ...)
-     #:binary (bo ...)
-     #:nary (no ...))
+     #:unary (uop ...)
+     #:binary (bop ...)
+     #:nary (nop ...))
   #`(define (f env fmla)
       (match fmla
-        [`(uo ,e) (uo (f env e))]
+        [`(uop ,e) (uop (f env e))]
         ...
-        [`(bo ,e1 ,e2) (bo (f env e1) (f env e2))]
+        [`(bop ,e1 ,e2) (bop (f env e1) (f env e2))]
         ...
-        [`(no ,e (... ...)) (no (map (λ (e) (f env e)) e))] ; NOTE (... ...) is a quoted ellipsis
+        [`(nop ,e (... ...)) (nop (map (λ (e) (f env e)) e))] ; NOTE (... ...) is a quoted ellipsis
         ...
         [v
           #:when (member v truth-values)
@@ -264,139 +271,38 @@
   #:binary (∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B)
   #:nary (∧* ∨* ≡*))
 
-;; TODO given a formula as a datum, check whether it is valid
-
-;; We now check some equation given in the book
+(define (free-vars fmla)
+  (match fmla
+    [`(,uop ,e) #:when (member uop uops)
+                (free-vars e)]
+    [`(,bop ,e1 ,e2) #:when (member bop bops)
+                     (set-union (free-vars e1) (free-vars e2))]
+    [`(,nop ,e ...) #:when (member nop nops)
+                    (apply set-union (map free-vars e))]
+    [v #:when (member v truth-values)
+       (set)]
+    [v #:when (symbol? v)
+       (set v)]))
 
 (module+ test
-
-; TODO: look at https://stackoverflow.com/questions/16571447/using-one-set-of-unit-tests-on-many-different-files-in-racket to run the same tests on both the rosette checker and the exhaustive checker
-
-  (define-syntax-parser define-and-check-by-enumeration
-    ; TODO: problem with that is `raco test` reports wrong line number
-    [(_ (f:id arg ...) body:expr)
-     #'(begin
-         (define (f arg ...) body)
-         (check-true
-           (always-#t?
-               (f arg ...))))])
-
-
-  (define-and-check-by-enumeration (eq-18.3.1 p)
-      (eq?
-        (¬ (¬ p))
-        p))
-  (define-and-check-by-enumeration (eq-18.3.2 p q)
-      (eq?
-        {p ∨ q}
-        (¬ {(¬ p) ∧ (¬ q)})))
-  (define-and-check-by-enumeration (eq-18.3.3 p q)
-      (eq?
-        {p ∧ q}
-        (¬ {(¬ p) ∨ (¬ q)})))
-  (define-and-check-by-enumeration (eq-18.3.4 a b)
-      (eq?
-        {a ⊃ b}
-        {(¬ a) ∨ b}))
-  (define-and-check-by-enumeration (eq-18.3.5 p)
-      (eq?
-        {p ⊃ 'f}
-        (¬ p)))
-  (define-and-check-by-enumeration (eq-18.3.6.1 p q)
-      (eq?
-        {p ≡ q}
-        {{p ⊃ q} ∧ {q ⊃ p}}))
-  (define-and-check-by-enumeration (eq-18.3.6.2 p q)
-      (eq?
-        {p ≡ q}
-        {{(¬ p) ∨ q} ∧ {p ∨ (¬ q)}}))
-
-  (define-and-check-by-enumeration (eq-18.3.7.1 p q)
-      (eq?
-        {p ⇒ q}
-        {(◇ p) ⊃ q}))
-  (define-and-check-by-enumeration (eq-18.3.7.2 p q)
-      (eq?
-        {p ⇒ q}
-        {(□ (¬ p)) ∨ q}))
-
-  (define-and-check-by-enumeration (eq-18.3.8 p q)
-      (eq?
-        {p ⇔ q}
-        {{p ⇒ q} ∧ {q ⇒ p}}))
-
-  (define-and-check-by-enumeration (eq-18.3.9.1 p)
-      (eq?
-        (□ p)
-        (¬ (◇ (¬ p)))))
-  (define-and-check-by-enumeration (eq-18.3.9.2 p)
-      (eq?
-        (□ p)
-        {(¬ p) ⇒ 'f}))
-
-  (define-and-check-by-enumeration (eq-18.3.10.1 p)
-      (eq?
-        (◇ p)
-        (¬ (□ (¬ p)))))
-  (define-and-check-by-enumeration (eq-18.3.10.2 p)
-      (eq?
-        (◇ p)
-        (¬ {p ⇒ 'f})))
-  (define-and-check-by-enumeration (eq-18.3.10.3 p)
-      (eq?
-        (◇ p)
-        {{p ⇒ 'f} ⇒ 'f}))
-
-  (define-and-check-by-enumeration (eq-18.3.11.1 p)
-      (eq?
-        (B p)
-        (◇ {p ∧ (¬ p)})))
-  (define-and-check-by-enumeration (eq-18.3.11.2 p)
-      (eq?
-        (B p)
-        {(◇ p) ∧ (◇ (¬ p))}))
-  (define-and-check-by-enumeration (eq-18.3.11.3 p)
-      (eq?
-        (B p)
-        {(◇ p) ∧ (¬ (□ p))}))
-
-  (define-and-check-by-enumeration (eq-18.3.12 p)
-      (eq?
-        (□ (◇ p))
-        (◇ p)))
-
-  (define-and-check-by-enumeration (eq-18.3.13 p q)
-      (eq?
-        (◇ {p ⇒ q})
-        {(◇ p) ⇒ (◇ q)}))
-
-  (define-and-check-by-enumeration (eq-18.3.13.1 p q)
-      (eq?
-        (□ {p ∧ q})
-        {(□ p) ∧ (□ q)}))
-  (define-and-check-by-enumeration (eq-18.3.13.2 p q)
-      (eq?
-        (□ {p ∨ q})
-        {(□ p) ∨ (□ q)}))
-  (define-and-check-by-enumeration (eq-18.3.13.3 p q)
-      (eq?
-        (◇ {p ∧ q})
-        {(◇ p) ∧ (◇ q)}))
-  (define-and-check-by-enumeration (eq-18.3.13.4 p q)
-      (eq?
-        (◇ {p ∨ q})
-        {(◇ p) ∨ (◇ q)}))
-
-  (define-and-check-by-enumeration (eq-18.2.7.1 p q)
-      (eq?
-        {p ⊃ q}
-        {(¬ q) ⊃ (¬ p)}))
-
-  (define-and-check-by-enumeration (eq-18.4.12.1 p q r)
-      (eq?
-        {p ⊃ {q ⊃ r}}
-        {{p ∧ q} ⊃ r}))
-  (define-and-check-by-enumeration (eq-18.4.12.2 p q r)
-      (eq?
-        {p ⇒ {q ⇒ r}}
-        {{p ∧ q} ⇒ r})))
+  (check-equal?
+    (free-vars 'p)
+    (set 'p))
+  (check-equal?
+    (free-vars '(∨ p q))
+    (set 'p 'q))
+  (check-equal?
+    (free-vars '(∧* p q r))
+    (set 'p 'q 'r))
+  (check-equal?
+    (free-vars '(∧ q (∨ p q)))
+    (set 'p 'q))
+  (check-equal?
+    (free-vars '(∧ q (∨ p t)))
+    (set 'p 'q))
+  (check-equal?
+    (free-vars '(∧ q (∨ p b)))
+    (set 'p 'q))
+  (check-equal?
+    (free-vars '(∧ (¬ q) (∨ p t)))
+    (set 'p 'q)))
