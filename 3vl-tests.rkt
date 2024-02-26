@@ -9,27 +9,11 @@
   "truth-tables.rkt"
   syntax/parse/define)
 
-;; Those formulas should be equivalent (in the sense of evaluating to the same thing in all environments):
-
-(define-for-syntax eqs
-  (make-hash))
-
-(define-syntax-parser check-eq-by-enumeration
-  [(_ f1 f2)
-   (define vars
-     (set->list
-       (set-union
-         (free-vars (eval (syntax->datum #'f1)))
-         (free-vars (eval (syntax->datum #'f2))))))
-   (with-syntax
-     ([(v ...) vars]
-      [(3val ...) (generate-temporaries vars)])
-     #'(for*/and ([3val truth-values] ...)
-                 (define env
-                   (make-hash `((v . ,3val) ...)))
-                 (eq?
-                   (eval/3 env f1)
-                   (eval/3 env f2))))])
+(define (check-eq-by-enumeration f1 f2)
+  (define (eq-in-env? env)
+    (eq? (eval/3 env f1) (eval/3 env f2)))
+  (define vars (set->list (set-union (free-vars f1) (free-vars f2))))
+  (stream-andmap eq-in-env? (interpretations vars)))
 
 (module+ test
   (require rackunit)
@@ -38,15 +22,14 @@
 
 (define-syntax-parser define-equiv-fmlas
   [(stx name f1 f2)
-   #;(hash-set!
-     eqs
-     (syntax->datum #'name)
-     (cons (eval (syntax->datum #'f1)) (eval (syntax->datum #'f2))))
      #`(begin
        (define name
          (cons f1 f2))
        (module+ test
          #,(syntax/loc #'stx (check-true (check-eq-by-enumeration f1 f2)))))])
+
+
+;; Those formulas should be equivalent (in the sense of evaluating to the same thing in all environments):
 
 (define-equiv-fmlas eq-18.3.1
                     '(¬ (¬ p))

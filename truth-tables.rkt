@@ -7,6 +7,7 @@
 (require
   syntax/parse/define
   (only-in racket for*/and)
+  racket/stream
   racket/local
   (for-syntax
     racket/syntax))
@@ -17,7 +18,8 @@
   truth-values
   designated-value?
   eval/3
-  free-vars)
+  free-vars
+  interpretations)
 
 ; NOTE => (rosette) is not ⇒
 ; NOTE <=> (rosette) is not ⇔
@@ -306,3 +308,22 @@
   (check-equal?
     (free-vars '(∧ (¬ q) (∨ p t)))
     (set 'p 'q)))
+
+(define (explore-stream f s)
+  ; given an element of s, f must produce a stream
+  (if (! (stream-empty? s))
+    (stream-append
+      (f (stream-first s))
+      (stream-lazy (explore-stream f (stream-rest s))))
+    (stream))) ; TODO why do we need stream-lazy here?
+
+(define (interpretations vars)
+  ; creates a lazy stream of all possible interpretations of the variables
+  (define (cases v inter)
+    (for/stream ([3val truth-values])
+                (hash-set inter v 3val)))
+  (match vars
+    [`(,v)
+      (cases v (hash))]
+    [`(,v ,vars ...)
+      (explore-stream ((curry cases) v) (interpretations vars))]))
