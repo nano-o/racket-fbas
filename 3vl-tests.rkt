@@ -7,6 +7,10 @@
     racket/set
     (only-in "truth-tables.rkt" free-vars))
   "truth-tables.rkt"
+  "rosette-sat.rkt"
+  "3to2.rkt"
+  racket/pretty
+  (only-in rosette unsat?)
   syntax/parse/define)
 
 (define (check-eq-by-enumeration f1 f2)
@@ -20,106 +24,116 @@
   (check-true (check-eq-by-enumeration '(¬ (¬ p)) 'p))
   (check-false (check-eq-by-enumeration '(¬ (¬ q)) 'p)))
 
-(define-syntax-parser define-equiv-fmlas
+(define-syntax-parser check-equiv
   [(stx name f1 f2)
      #`(begin
        (define name
          (cons f1 f2))
        (module+ test
-         #,(syntax/loc #'stx (check-true (check-eq-by-enumeration f1 f2)))))])
+         #,(syntax/loc #'stx (check-true (check-eq-by-enumeration f1 f2) "not equivalent according to eval/3"))
+         #,(syntax/loc #'stx (check-true (unsat? (SAT? `(! ,(cdr (equiv-fmlas? f1 f2))))) "not equivalent according to SAT?"))
+         #,(syntax/loc #'stx (check-true (unsat? (valid/3? `(eq? ,f1 ,f2))) "not equivalent according to valid/3"))))])
 
 
 ;; Those formulas should be equivalent (in the sense of evaluating to the same thing in all environments):
 
-(define-equiv-fmlas eq-18.3.1
-                    '(¬ (¬ p))
-                    'p)
+(check-equiv big-wedge
+        '{p ∧ {q ∧ r}}
+        '(∧* p q r))
 
-(define-equiv-fmlas eq-18.3.2
-                    '{p ∨ q}
-                    '(¬ {(¬ p) ∧ (¬ q)}))
-(define-equiv-fmlas eq-18.3.3
-                    '{p ∧ q}
-                    '(¬ {(¬ p) ∨ (¬ q)}))
-(define-equiv-fmlas eq-18.3.4
-                    '{a ⊃ b}
-                    '{(¬ a) ∨ b})
-(define-equiv-fmlas eq-18.3.5
-                    '{p ⊃ f}
-                    '(¬ p))
-(define-equiv-fmlas eq-18.3.6.1
-                    '{p ≡ q}
-                    '{{p ⊃ q} ∧ {q ⊃ p}})
-(define-equiv-fmlas eq-18.3.6.2
-                    '{p ≡ q}
-                    '{{(¬ p) ∨ q} ∧ {p ∨ (¬ q)}})
+(check-equiv big-vee
+        '{p ∨ {q ∨ r}}
+        '(∨* p q r))
 
-(define-equiv-fmlas eq-18.3.7.1
-                    '{p ⇒ q}
-                    '{(◇ p) ⊃ q})
-(define-equiv-fmlas eq-18.3.7.2
-                    '{p ⇒ q}
-                    '{(□ (¬ p)) ∨ q})
+(check-equiv eq-18.3.1
+             '(¬ (¬ p))
+             'p)
 
-(define-equiv-fmlas eq-18.3.8
-                    '{p ⇔ q}
-                    '{{p ⇒ q} ∧ {q ⇒ p}})
+(check-equiv eq-18.3.2
+             '{p ∨ q}
+             '(¬ {(¬ p) ∧ (¬ q)}))
+(check-equiv eq-18.3.3
+             '{p ∧ q}
+             '(¬ {(¬ p) ∨ (¬ q)}))
+(check-equiv eq-18.3.4
+             '{a ⊃ b}
+             '{(¬ a) ∨ b})
+(check-equiv eq-18.3.5
+             '{p ⊃ f}
+             '(¬ p))
+(check-equiv eq-18.3.6.1
+             '{p ≡ q}
+             '{{p ⊃ q} ∧ {q ⊃ p}})
+(check-equiv eq-18.3.6.2
+             '{p ≡ q}
+             '{{(¬ p) ∨ q} ∧ {p ∨ (¬ q)}})
 
-(define-equiv-fmlas eq-18.3.9.1
-                    '(□ p)
-                    '(¬ (◇ (¬ p))))
-(define-equiv-fmlas eq-18.3.9.2
-                    '(□ p)
-                    '{(¬ p) ⇒ f})
+(check-equiv eq-18.3.7.1
+             '{p ⇒ q}
+             '{(◇ p) ⊃ q})
+(check-equiv eq-18.3.7.2
+             '{p ⇒ q}
+             '{(□ (¬ p)) ∨ q})
 
-(define-equiv-fmlas eq-18.3.10.1
-                    '(◇ p)
-                    '(¬ (□ (¬ p))))
-(define-equiv-fmlas eq-18.3.10.2
-                    '(◇ p)
-                    '(¬ {p ⇒ f}))
-(define-equiv-fmlas eq-18.3.10.3
-                    '(◇ p)
-                    '{{p ⇒ f} ⇒ f})
+(check-equiv eq-18.3.8
+             '{p ⇔ q}
+             '{{p ⇒ q} ∧ {q ⇒ p}})
 
-(define-equiv-fmlas eq-18.3.11.1
-                    '(B p)
-                    '(◇ {p ∧ (¬ p)}))
-(define-equiv-fmlas eq-18.3.11.2
-                    '(B p)
-                    '{(◇ p) ∧ (◇ (¬ p))})
-(define-equiv-fmlas eq-18.3.11.3
-                    '(B p)
-                    '{(◇ p) ∧ (¬ (□ p))})
+(check-equiv eq-18.3.9.1
+             '(□ p)
+             '(¬ (◇ (¬ p))))
+(check-equiv eq-18.3.9.2
+             '(□ p)
+             '{(¬ p) ⇒ f})
 
-(define-equiv-fmlas eq-18.3.12
-                    '(□ (◇ p))
-                    '(◇ p))
+(check-equiv eq-18.3.10.1
+             '(◇ p)
+             '(¬ (□ (¬ p))))
+(check-equiv eq-18.3.10.2
+             '(◇ p)
+             '(¬ {p ⇒ f}))
+(check-equiv eq-18.3.10.3
+             '(◇ p)
+             '{{p ⇒ f} ⇒ f})
 
-(define-equiv-fmlas eq-18.3.13
-                    '(◇ {p ⇒ q})
-                    '{(◇ p) ⇒ (◇ q)})
+(check-equiv eq-18.3.11.1
+             '(B p)
+             '(◇ {p ∧ (¬ p)}))
+(check-equiv eq-18.3.11.2
+             '(B p)
+             '{(◇ p) ∧ (◇ (¬ p))})
+(check-equiv eq-18.3.11.3
+             '(B p)
+             '{(◇ p) ∧ (¬ (□ p))})
 
-(define-equiv-fmlas eq-18.3.13.1
-                    '(□ {p ∧ q})
-                    '{(□ p) ∧ (□ q)})
-(define-equiv-fmlas eq-18.3.13.2
-                    '(□ {p ∨ q})
-                    '{(□ p) ∨ (□ q)})
-(define-equiv-fmlas eq-18.3.13.3
-                    '(◇ {p ∧ q})
-                    '{(◇ p) ∧ (◇ q)})
-(define-equiv-fmlas eq-18.3.13.4
-                    '(◇ {p ∨ q})
-                    '{(◇ p) ∨ (◇ q)})
+(check-equiv eq-18.3.12
+             '(□ (◇ p))
+             '(◇ p))
 
-(define-equiv-fmlas eq-18.2.7.1
-                    '{p ⊃ q}
-                    '{(¬ q) ⊃ (¬ p)})
+(check-equiv eq-18.3.13
+             '(◇ {p ⇒ q})
+             '{(◇ p) ⇒ (◇ q)})
 
-(define-equiv-fmlas eq-18.4.12.1
-                    '{p ⊃ {q ⊃ r}}
-                    '{{p ∧ q} ⊃ r})
-(define-equiv-fmlas eq-18.4.12.2
-                    '{p ⇒ {q ⇒ r}}
-                    '{{p ∧ q} ⇒ r})
+(check-equiv eq-18.3.13.1
+             '(□ {p ∧ q})
+             '{(□ p) ∧ (□ q)})
+(check-equiv eq-18.3.13.2
+             '(□ {p ∨ q})
+             '{(□ p) ∨ (□ q)})
+(check-equiv eq-18.3.13.3
+             '(◇ {p ∧ q})
+             '{(◇ p) ∧ (◇ q)})
+(check-equiv eq-18.3.13.4
+             '(◇ {p ∨ q})
+             '{(◇ p) ∨ (◇ q)})
+
+(check-equiv eq-18.2.7.1
+             '{p ⊃ q}
+             '{(¬ q) ⊃ (¬ p)})
+
+(check-equiv eq-18.4.12.1
+             '{p ⊃ {q ⊃ r}}
+             '{{p ∧ q} ⊃ r})
+(check-equiv eq-18.4.12.2
+             '{p ⇒ {q ⇒ r}}
+             '{{p ∧ q} ⇒ r})
