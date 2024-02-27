@@ -71,17 +71,20 @@
      (&& ,(is-b q) ,(is-t p))
      (&& ,(is-t q) ,(is-f p))))
 
-(module+ test
-  (check-equal?
-    (encode-¬ '(f1+ . f1-) '(f2+ . f2-))
-    'todo))
-
 ; TODO macro
 (define (encode-∧ p q1 q2) ; encodes "p is the conjunction of q1 and q2"
+  ; `(||
+     ; (&& (|| ,((is-tv 'f) q1) ,((is-tv 'f) q2)) ,((is-tv 'f) p))
+     ; (&& (! (|| ,((is-tv 'f) q1) ,((is-tv 'f) q2))) (|| ,((is-tv 'b) q1) ,((is-tv 'b) q2)) ,((is-tv 'b) p))
+     ; (&& ,((is-tv 't) q1) ,((is-tv 't) q2) ,((is-tv 't) p))))
   `(|| ,@(for*/list ([v1 truth-values]
                      [v2 truth-values])
            `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (∧ v1 v2)) p)))))
 (define (encode-∨ p q1 q2)
+  ; `(||
+     ; (&& (|| ,((is-tv 't) q1) ,((is-tv 't) q2)) ,((is-tv 't) p))
+     ; (&& (! (|| ,((is-tv 't) q1) ,((is-tv 't) q2))) (|| ,((is-tv 'b) q1) ,((is-tv 'b) q2)) ,((is-tv 'b) p))
+     ; (&& ,((is-tv 'f) q1) ,((is-tv 'f) q2) ,((is-tv 'f) p))))
   `(|| ,@(for*/list ([v1 truth-values]
                      [v2 truth-values])
            `(&& ,((is-tv v1) q1) ,((is-tv v2) q2) ,((is-tv (∨ v1 v2)) p)))))
