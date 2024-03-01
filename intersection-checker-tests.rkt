@@ -8,12 +8,6 @@
 
 (module+ test
   (require rackunit)
-  (pretty-print
-    (intertwined-characteristic-formula
-      `((p . ,(qset 1 (seteqv 'q) (set)))
-        (q . ,(qset 1 (seteqv 'q) (set)))))))
-
-(module+ test
   (check-true
     (sat? (check-intertwined
       `((p . ,(qset 1 (seteqv 'p) (set)))

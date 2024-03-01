@@ -11,6 +11,8 @@
 (provide
   check-intertwined)
 
+; TODO use a "main" module
+
 (define (check-valid-using-3to2 fmla)
   (SAT? `(! ,(cdr (t-or-b? fmla)))))
 
