@@ -217,7 +217,7 @@
         (hash-ref fmla-to-vars sub-f)
         (3to2-rec sub-f)))
     (define constraint
-      (match f
+      (match f ; TODO macro
         [(? symbol?) #:when (member f truth-values) ((is-tv f) f-+)]
         [(? symbol?) #t]
         [`(∧ ,q1 ,q2)

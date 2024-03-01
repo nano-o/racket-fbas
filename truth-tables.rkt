@@ -27,6 +27,8 @@
 ; The logical values are 't, 'b, and 'f (true, both, and false)
 (define truth-values '(t b f))
 
+; TODO collect those in macro phase when defining them?
+; then we could use the struct/procedure trick to make those available at runtime
 (define uops '(¬ ◇ □ B))
 (define bops '(∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B))
 (define nops '(∧* ∨* ≡*))
@@ -315,7 +317,7 @@
     (stream-append
       (f (stream-first s))
       (stream-lazy (explore-stream f (stream-rest s))))
-    (stream))) ; TODO why do we need stream-lazy here?
+    (stream)))
 
 (define (interpretations vars)
   ; creates a lazy stream of all possible interpretations of the variables
@@ -327,3 +329,5 @@
       (cases v (hash))]
     [`(,v ,vars ...)
       (explore-stream ((curry cases) v) (interpretations vars))]))
+
+; TODO stream of models, SAT, validity, equivalence of fmlas

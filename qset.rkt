@@ -28,9 +28,9 @@
   nodes-without-qset
   add-missing-qsets)
 
-; a node is something for which eqv? is semantic equivalence, i.e. interned symbols, numbers, and characters.
+; a node is something for which eqv? is semantic equivalence, i.e. symbols, numbers, and characters.
 (define node/c
-  (or/c boolean? (and/c symbol? (or/c symbol-interned? symbol-unreadable?)) number? char?))
+  (or/c boolean? symbol? number? char?))
 
 ; validators must be a seteqv
 ; inner-qsets must be a set
@@ -141,23 +141,22 @@
           #:validators (seteqv n)
           #:inner-qsets (set))))))
 
-(define-generics symbol-generator
-  (gen-get-symbol symbol-generator v))
-(define-struct my-sym-gen (prefix [count #:mutable] [syms #:mutable])
-  #:methods gen:symbol-generator
-  [(define (gen-get-symbol g v)
-     (if (dict-has-key? (my-sym-gen-syms g) v)
-       (dict-ref (my-sym-gen-syms g) v)
-       (begin
-         (set-my-sym-gen-count! g (+ (my-sym-gen-count g) 1))
-         (let ()
-           (define sym (string->unreadable-symbol (format "~a-gen-sym-~a" (my-sym-gen-prefix g) (my-sym-gen-count g))))
-           (set-my-sym-gen-syms! g (dict-set (my-sym-gen-syms g) v sym))
-           sym))))])
+(define-struct sym-gen-struct ([sym-map #:mutable])
+  #:property prop:procedure
+  (λ (sym-gen q)
+    (if (dict-has-key? (sym-gen-struct-sym-map sym-gen) q)
+      (dict-ref (sym-gen-struct-sym-map sym-gen) q)
+      (local
+        [(define sym (gensym))]
+        (dict-set! (sym-gen-struct-sym-map sym-gen) q sym)
+        sym))))
+(define (make-sym-gen)
+  (sym-gen-struct (make-hash)))
 
 (define (flatten-qsets network)
   ; builds a new qset configuration that has quorum-intersection if and only if the original one has it, and where no quorumset has any inner quorum sets.
-  (define sym-gen (my-sym-gen "flatten-qsets" 0 null))
+  (define sym-gen (make-sym-gen))
+  ; (define sym-gen (my-sym-gen "flatten-qsets" 0 null))
   (define inner-qsets
     (apply
       set-union
@@ -167,7 +166,7 @@
   (define (flatten q)
     (define new-validators
       (for/seteqv ([iq (qset-inner-qsets q)])
-        (gen-get-symbol sym-gen iq)))
+        (sym-gen iq)))
     (qset/kw
       #:threshold (qset-threshold q)
       #:validators (set-union (qset-validators q) new-validators)
@@ -177,7 +176,7 @@
       (cons p (flatten q))))
   (define new
     (for/list ([q inner-qsets])
-      (cons (gen-get-symbol sym-gen q) (flatten q))))
+      (cons (sym-gen q) (flatten q))))
   (append existing new))
 
 (module+ test
@@ -185,8 +184,10 @@
     (for/and ([q (dict-values (flatten-qsets `((p . ,qset-6))))])
       (set-empty? (qset-inner-qsets q)))))
 
+; collapse some qsets to a single point, e.g. orgs whose validators only ever appear as the same org in other qsets (and whose threshold is > 1/2)
+; NOTE marginal utility... inner qsets are small
 (define (collapse-qsets network)
-  (define sym-gen (my-sym-gen "collapse-qsets" 0 null))
+  (define sym-gen (make-sym-gen))
   (define qsets
     (set-union
       (apply set (dict-values network))
@@ -225,7 +226,7 @@
       (begin
         (qset/kw
           #:threshold 1
-          #:validators (seteqv (gen-get-symbol sym-gen q))
+          #:validators (seteqv (sym-gen q))
           #:inner-qsets (set)))
       (let ()
         (define collapsed
@@ -234,7 +235,7 @@
             #:validators (set-union
                            (qset-validators q)
                            (for/seteqv ([q2 (in-set (set-intersect (qset-inner-qsets q) to-collapse))])
-                                       (gen-get-symbol sym-gen q2)))
+                                       (sym-gen q2)))
             #:inner-qsets (for/set
                             ([q2 (in-set
                                    (set-subtract
@@ -248,7 +249,7 @@
   (define new-points
     (for/list ([q to-collapse])
       (cons
-        (gen-get-symbol sym-gen q)
+        (sym-gen q)
         ; we give the new validator, which corresponds to an old qset q, the qsets of the validators in q (they all have the same qset)
         (dict-ref existing-points (car (set->list (qset-validators q)))))))
   (append new-points existing-points))
