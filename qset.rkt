@@ -1,22 +1,25 @@
 #lang racket
+; #lang errortrace racket
 (require
-  (only-in racket/hash hash-union! hash-union)
-  #;racket/trace
-  racket/pretty
-  racket/generic)
+  graph ; for computing strongly connected components
+  racket/trace
+  racket/pretty)
 
-; TODO: use mutable sets and hashes because of https://github.com/racket/racket/issues/4899
+; TODO qset->slices (for flat qsets is enough)
+; TODO projection onto a set
+; TODO closure
+; TODO intersection check and quorum check when all orgs can be collapsed and all validators have qset that's a threshold of orgs (easy in that case...). Also easy to compute resilience bounds. Even whether the network is "resilient".
 
 (provide
   (contract-out
     [node/c contract?]
     [qset/c contract?]
     [stellar-network/c contract?]
-    [struct qset ; TODO: does this impose undue overhead?
+    [struct qset ; TODO: why not qset/c?
       ((threshold exact-positive-integer?)
        (validators (set/c node/c #:cmp 'eqv))
        (inner-qsets (set/c any/c #:cmp 'equal)))]
-    [qset/kw ; TODO: does this impose undue overhead?
+    [qset/kw
       (->
         #:threshold exact-positive-integer?
         #:validators (set/c node/c #:cmp 'eqv)
@@ -28,30 +31,23 @@
   nodes-without-qset
   add-missing-qsets)
 
+(module+ test
+  (require rackunit))
+
 ; a node is something for which eqv? is semantic equivalence, i.e. symbols, numbers, and characters.
 (define node/c
   (or/c boolean? symbol? number? char?))
 
 ; validators must be a seteqv
 ; inner-qsets must be a set
-(define-struct qset (threshold validators inner-qsets) #:transparent)
+(define-struct qset (threshold validators inner-qsets) #:prefab) ; prefab to simplify serialization/deserialization
 
 (define (qset/kw #:threshold t #:validators vs #:inner-qsets qs)
   (qset t vs qs))
 
-(define (qset-elements q)
-  (set-union
-    (for/set ([v (qset-validators q)]) v)
-    (qset-inner-qsets q)))
-
-(define (qset/c q)
-  (struct/dc qset
-             [threshold (and/c (< 0 (qset-threshold q)) (<= (qset-threshold q) (set-count (qset-elements q))))]
-             [validators (set/c node/c #:cmp 'eqv)]
-             [inner-qsets (set/c qset/c #:cmp 'equal)]))
+; TODO macro to create qsets without specifying seteqv and set
 
 (module+ test
-  (require rackunit)
   (define qset-1
     (qset/kw #:threshold 2 #:validators (seteqv 1 2 3) #:inner-qsets (set)))
   (define qset-2
@@ -82,9 +78,74 @@
           qset-3
           (qset/kw #:threshold 2 #:validators (seteqv 2 1 3 1) #:inner-qsets (set)))))))
 
-(define (reachable-inner-qsets qset)
+(define (qset-elements q)
+  (set-union
+    (apply set (set->list (qset-validators q))) ; just because qset-validators is a seteqv...
+    (qset-inner-qsets q)))
+
+(module+ test
+  (check-equal?
+    (qset-elements
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv 1 2 3)
+        #:inner-qsets (set)))
+    (set 1 2 3))
+  (check-equal?
+    (qset-elements
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv 'A)
+        #:inner-qsets (set (qset/kw #:threshold 2 #:validators (seteqv 1 2 3) #:inner-qsets (set)))))
+    (set 'A (qset 2 (seteqv 1 2 3) (set))))
+  (check-equal?
+    (qset-elements
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv)
+        #:inner-qsets (set (qset/kw #:threshold 2 #:validators (seteqv 1 2 3) #:inner-qsets (set)))))
+    (set (qset 2 (seteqv 1 2 3) (set)))))
+
+(define (qset-members q)
+  (set-union
+    (qset-validators q)
+    (apply set-union
+           (cons (seteqv) ; set-union cannot handle an empty list
+                 (for/list ([iq (qset-inner-qsets q)])
+                   (qset-members iq))))))
+
+(module+ test
+  (check-equal?
+    (qset-members
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv 1 2 3)
+        #:inner-qsets (set)))
+    (seteqv 1 2 3))
+  (check-equal?
+    (qset-members
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv 'A)
+        #:inner-qsets (set (qset/kw #:threshold 2 #:validators (seteqv 1 2 3) #:inner-qsets (set)))))
+    (seteqv 'A 1 2 3))
+  (check-equal?
+    (qset-members
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv)
+        #:inner-qsets (set (qset/kw #:threshold 2 #:validators (seteqv 1 2 3) #:inner-qsets (set)))))
+    (seteqv 1 2 3)))
+
+(define (qset/c q)
+  (struct/dc qset
+             [threshold (and/c (< 0 (qset-threshold q)) (<= (qset-threshold q) (set-count (qset-elements q))))]
+             [validators (set/c node/c #:cmp 'eqv)]
+             [inner-qsets (set/c qset/c #:cmp 'equal)]))
+
+(define (reachable-inner-qsets q)
   (define iqs
-    (qset-inner-qsets qset))
+    (qset-inner-qsets q))
   (set-union
     iqs
     (for/fold
@@ -94,42 +155,168 @@
 
 (module+ test
   (check-equal?
-    (qset-inner-qsets qset-6)
-    (set (qset 2 (seteqv 'z 'y 'x) (set)) (qset 2 (seteqv 'a 'b 'c) (set)) (qset 2 (seteqv 1 2 3) (set)))))
+    (reachable-inner-qsets
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv)
+        #:inner-qsets
+          (set
+            (qset/kw
+              #:threshold 2
+              #:validators (seteqv 'x 'y 'z)
+              #:inner-qsets (set))
+            (qset/kw
+              #:threshold 2
+              #:validators (seteqv 1 2 3)
+              #:inner-qsets
+                (set
+                  (qset/kw
+                    #:threshold 2
+                    #:validators (seteqv 'a 'b 'c)
+                    #:inner-qsets
+                      (set)))))))
+    (set
+      (qset 2 (seteqv 1 2 3) (set (qset 2 (seteqv 'c 'b 'a) (set))))
+      (qset 2 (seteqv 'z 'y 'x) (set))
+      (qset 2 (seteqv 'c 'b 'a) (set)))))
 
-(define (nodes-in-qset q)
-  (set-union
-    (qset-validators q)
-    (apply
-      set-union
-      (cons (seteqv) ; to avoid an empty list
-            (for/list ([iq (qset-inner-qsets q)])
-              (nodes-in-qset iq))))))
+(define (fixpoint f v)
+  (if (equal? (f v) v)
+    v
+    (fixpoint f (f v))))
+
+(module+ test
+  (define (f v) (if (< v 42) (+ 1 v) v))
+  (check-equal? (fixpoint f 0) 42))
+
+(define (blocked? q P)
+  (define (directly-blocked q blocked-set)
+    (>
+      (+
+        (set-count (set-intersect (qset-elements q) blocked-set))
+        (qset-threshold q))
+      (set-count (qset-elements q))))
+  (define qs
+    (set-union (set q) (reachable-inner-qsets q)))
+  (define (compute-blocked blocked-set)
+    (set-union
+      blocked-set
+      (for/set ([q qs] #:when (directly-blocked q blocked-set))
+        q)))
+  (set-member? (fixpoint compute-blocked P) q))
+
+(module+ test
+  (check-true
+    (blocked?
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv 1 2 3)
+        #:inner-qsets (set))
+      (set 1 2)))
+  (check-false
+    (blocked?
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv 1 2 3)
+        #:inner-qsets (set))
+      (set 2)))
+  (check-false
+    (blocked?
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv 'u)
+        #:inner-qsets
+        (set
+          (qset/kw
+            #:threshold 2
+            #:validators (seteqv 'x 'y 'z)
+            #:inner-qsets (set))
+          (qset/kw
+            #:threshold 2
+            #:validators (seteqv 1 2)
+            #:inner-qsets
+            (set
+              (qset/kw
+                #:threshold 2
+                #:validators (seteqv 'a 'b 'c)
+                #:inner-qsets
+                (set))))))
+      (set 'u 'x 2 'c)))
+  (check-true
+    (blocked?
+      (qset/kw
+        #:threshold 2
+        #:validators (seteqv 'u)
+        #:inner-qsets
+        (set
+          (qset/kw
+            #:threshold 2
+            #:validators (seteqv 'x 'y 'z)
+            #:inner-qsets (set))
+          (qset/kw
+            #:threshold 2
+            #:validators (seteqv 1 2)
+            #:inner-qsets
+            (set
+              (qset/kw
+                #:threshold 2
+                #:validators (seteqv 'a 'b 'c)
+                #:inner-qsets
+                (set))))))
+      (set 'u 2 'b 'c))))
+
+(define (closure P network)
+  (define (blocked-set P)
+    (set-union
+      P
+      (for/set ([(p q) (in-dict network)]
+                #:when (blocked? q P))
+        p)))
+  (fixpoint blocked-set P))
+
+(module+ test
+  (check-equal?
+    (closure
+      (set 'q)
+      (list
+        (cons 'q (qset 1 (seteqv 'q) (set)))
+        (cons 'r (qset 1 (seteqv 'p) (set)))
+        (cons 'p (qset 1 (seteqv 'q) (set)))))
+    (set 'p 'q 'r))
+  (check-equal?
+    (closure
+      (set 'p)
+      (list
+        (cons 'q (qset 1 (seteqv 'q) (set)))
+        (cons 'r (qset 1 (seteqv 'p) (set)))
+        (cons 'p (qset 1 (seteqv 'q) (set)))))
+    (set 'p 'r)))
 
 (define (network-members network)
   (apply
     set-union
     (cons (seteqv) ; to avoid an empty list
           (for/list ([(_ q) (in-dict network)])
-            (nodes-in-qset q)))))
+            (qset-members q)))))
 
 (define (nodes-without-qset network)
   (set-subtract
     (network-members network)
     (apply seteqv (dict-keys network))))
 
-(define (no-nodes-with-no-qset network)
+(define (no-orphans? network)
   (set-empty? (nodes-without-qset network)))
 
 (define stellar-network/c
   (and/c
-    (listof (cons/c node/c qset/c)) ; association list; why not hash?
-    no-nodes-with-no-qset))
+    (listof (cons/c node/c qset/c)) ; TODO association list; why not hash?
+    no-orphans?))
 
 (module+ test
   (check-false
     (stellar-network/c `((p . ,qset-1)))))
 
+; add empty qsets to nodes that have a missing qset
 (define (add-missing-qsets network)
   (append
     network
@@ -188,7 +375,7 @@
 ; NOTE marginal utility... inner qsets are small
 (define (collapse-qsets network)
   (define sym-gen (make-sym-gen))
-  (define qsets
+  (define qsets ; all the qsets (including inner ones)
     (set-union
       (apply set (dict-values network))
       (apply
@@ -279,3 +466,91 @@
   (check-equal?
     (invert-qset-map `(,(cons 'q qset-1) ,(cons 'p qset-1)))
     (list (list (qset 2 (seteqv 1 2 3) (set)) 'p 'q))))
+
+;; Nice networks
+; TODO submodule?
+
+(define (flat-qsets? network) ; TODO
+  (for/and ([q (dict-values network)])
+    (set-empty? (qset-inner-qsets q))))
+
+(define (blocked q P) ; q must no have inner qsets
+  (>
+    (+
+      (set-count (set-intersect (qset-validators q) P))
+      (qset-threshold q))
+    (set-count (qset-validators q))))
+
+(define (flat-closure P qset-map)
+  (define to-add
+    (for/seteqv ([p (network-members qset-map)]
+              #:when (blocked (dict-ref qset-map p) P))
+      p))
+  (if (set-empty? (set-subtract to-add P))
+    P
+    (flat-closure (set-union P to-add) qset-map)))
+
+(module+ test
+  (define network-1
+    (for/list ([p '(1 2 3)])
+      (cons p qset-1)))
+  (check-equal?
+    (flat-closure (seteqv 1) network-1)
+    (seteqv 1))
+  (check-equal?
+    (flat-closure (seteqv 1 2) network-1)
+    (seteqv 1 2 3))
+  (check-equal?
+    (flat-closure (seteqv 1 3) network-1)
+    (seteqv 1 2 3)))
+
+(define (network-to-graph net)
+  (define edges
+    (for*/list ([p (network-members net)]
+                [q (network-members net)]
+                #:when (set-member? (qset-members (dict-ref net p)) q))
+      (list p q)))
+  (unweighted-graph/directed edges))
+
+(define (non-transitive-intersection? network)
+  (unless (flat-qsets? network)
+    (error "all qsets must be flat"))
+    (for*/and ([(p1 q1) (in-dict network)]
+               [(p2 q2) (in-dict network)])
+      (define inter (set-intersect (qset-validators q1) (qset-validators q2)))
+      (>
+        (+ (qset-threshold q1) (qset-threshold q2) (set-count inter))
+        (+ (set-count (qset-validators q1)) (set-count (qset-validators q2))))))
+
+(module+ test
+  (define g1 (network-to-graph network-1))
+  (check-equal? (length (get-edges g1)) 9))
+
+(module+ test
+  (require racket/serialize)
+  (define stellar-network
+    (with-input-from-file
+      "./stellarbeat.data"
+      (thunk (deserialize (read)))))
+  (define bscc ; biggest scc
+    (car (sort (scc (network-to-graph stellar-network)) (λ (l1 l2) (> (length l1) (length l2))))))
+  (define bscc-network
+    (for/list ([(p q) (in-dict stellar-network)]
+               #:when (set-member? bscc p))
+      (cons p q)))
+
+  (set-count (apply set (dict-values bscc-network)))
+  (set-count (reachable-inner-qsets (car (dict-values bscc-network))))
+
+  (define collapsed-bscc-network (collapse-qsets bscc-network))
+  (check-true (flat-qsets? collapsed-bscc-network))
+  (check-true (non-transitive-intersection? collapsed-bscc-network))
+
+  (define flattened-stellar-network (flatten-qsets stellar-network))
+  (check-true (flat-qsets? flattened-stellar-network))
+  #;(set-count (flat-closure (apply seteqv biggest-scc) flattened-stellar-network))
+  #;(set-count (closure (apply set biggest-scc) stellar-network))
+  #;(set-count (network-members flattened-stellar-network)))
+
+; TODO find small quorum (use SSCs), check intersection, check closure covers network
+; Use unweighted-graph/directed
