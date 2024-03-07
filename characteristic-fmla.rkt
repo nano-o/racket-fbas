@@ -1,4 +1,5 @@
-#lang rosette
+#lang racket
+; #lang errortrace racket
 
 ; Functions to generate the formula that characterizes the intertwinedness of a qset configuration.
 
@@ -8,21 +9,18 @@
 (provide
   qset-characteristic-fmla)
 
-; TODO char fmla using slices
-
 ; creates a datum representing the formula
 (define (qset-characteristic-fmla network)
   (define points-to-check (dict-keys network))
-  (define flattened-network
+  ; first flatten the network
+  (define flat-network
     (flatten-qsets (collapse-qsets network)))
     ; (flatten-qsets network))
-  (define original-points
-    (dict-keys flattened-network))
   (define symbols-map
-    (for/hash ([p original-points])
-      (if (symbol? p)
-        (values p p)
-        (values p (string->symbol (~v p))))))
+    (for/hash ([p (dict-keys flat-network)])
+      ; we create symbols with $ at the beginning to avoid any clash with 3vl value ('t, 'b, and 'f).
+      (unless (node/c p) (error (format "cannot handle ~v" p)))
+      (values p (string->symbol (format "$~a" (if (symbol? p) (symbol->string p) p))))))
   (define (negate p)
     `(¬ ,p))
   (define (closedAx q ps polarity)
@@ -39,7 +37,7 @@
   (define ax
     `(∧*
        ,@(for/list
-           ([(q ps) (in-dict (invert-qset-map flattened-network))]
+           ([(q ps) (in-dict (invert-qset-map flat-network))]
             #:when
             (not ; skip trivial qsets
               (and
@@ -48,6 +46,7 @@
             [polarity (list identity negate)])
            (closedAx q ps polarity))))
   (define fmla
+    ; NOTE we only need to check equivalence of the original points, not the points introduced during flattening
     `(⇒ ,ax (≡* ,@(for/list ([p points-to-check]) (dict-ref symbols-map p)))))
   fmla)
 
@@ -64,9 +63,9 @@
     '(⇒
        (∧*
          (⇒
-           (∨* (∧* q))
-           (∧* q p))
+           (∨* (∧* $q))
+           (∧* $q $p))
          (⇒
-           (∨* (∧* (¬ q)))
-           (∧* (¬ q) (¬ p))))
-       (≡* p q))))
+           (∨* (∧* (¬ $q)))
+           (∧* (¬ $q) (¬ $p))))
+       (≡* $p $q))))
