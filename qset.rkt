@@ -1,14 +1,16 @@
 #lang racket
 ; #lang errortrace racket
+
 (require
   graph ; for computing strongly connected components
+  syntax/parse/define
   racket/trace
   racket/pretty)
 
 ; TODO qset->slices (for flat qsets is enough)
 ; TODO projection onto a set
-; TODO closure
 ; TODO intersection check and quorum check when all orgs can be collapsed and all validators have qset that's a threshold of orgs (easy in that case...). Also easy to compute resilience bounds. Even whether the network is "resilient".
+; TODO good-case check: find maximal scc, check closure is whole network; find maximal clique of intertwined members of the scc (with heuristic); if not the whole scc, check closure of the clique is the whole network; if failure we can try another clique (we expect to have a big maximal clique that should be easy to hit).
 
 (provide
   (contract-out
@@ -40,26 +42,56 @@
 
 ; validators must be a seteqv
 ; inner-qsets must be a set
+; TODO why not just an assoc list?
 (define-struct qset (threshold validators inner-qsets) #:prefab) ; prefab to simplify serialization/deserialization
 
-(define (qset/kw #:threshold t #:validators vs #:inner-qsets qs)
-  (qset t vs qs))
+; contract for qsets
+(define qset/c
+  (flat-rec-contract c
+    (struct/dc qset
+               [threshold (validators inner-qsets) #:flat (and/c ((curry <) 0) ((curry >=) (+ (set-count validators) (set-count inner-qsets))))]
+               [validators (set/c node/c #:cmp 'eqv)]
+               [inner-qsets (set/c c #:cmp 'equal)])))
+
+
+(define (qset/kw #:threshold t #:validators [vs (seteqv)] #:inner-qsets [iqs (set)])
+  (qset t vs iqs))
+
+(define-syntax-parser mk-qset ; TOTO simplify this
+  [(_ t (v ...) (iq ...)) #'(qset t (seteqv v ...) (set iq ...))]
+  [(_ #:threshold t #:validators v ... #:inner-qsets iq ...)
+   #'(qset t (seteqv v ...) (set iq ...))]
+  [(_ #:threshold t #:validators v ...)
+   #'(qset t (seteqv v ...) (set))]
+  [(_ #:threshold t #:inner-qsets iq ...)
+   #'(qset t (seteqv) (set iq ...))])
+
+(module+ test
+  (check-true (qset/c (mk-qset 1 (1 2 3) ())))
+  (check-true (qset/c (mk-qset #:threshold 1 #:validators 1 2 3 #:inner-qsets (mk-qset 1 (1 2 3) ()))))
+  (check-true (qset/c (mk-qset #:threshold 1 #:validators 1 2 3))))
 
 ; TODO macro to create qsets without specifying seteqv and set
 
 (module+ test
   (define qset-1
-    (qset/kw #:threshold 2 #:validators (seteqv 1 2 3) #:inner-qsets (set)))
+    (mk-qset #:threshold 2 #:validators 1 2 3))
+  (check-true (qset/c qset-1))
   (define qset-2
-    (qset/kw #:threshold 2 #:validators (seteqv) #:inner-qsets (set)))
+    (mk-qset #:threshold 2 #:validators #:inner-qsets))
+  (check-false (qset/c qset-2))
   (define qset-3
-    (qset/kw #:threshold 2 #:validators (seteqv 'a 'b 'c) #:inner-qsets (set)))
+    (mk-qset #:threshold 2 #:validators 'a 'b 'c))
+  (check-true (qset/c qset-3))
   (define qset-4
-    (qset/kw #:threshold 2 #:validators (seteqv 'x 'y 'z) #:inner-qsets (set)))
+    (mk-qset #:threshold 2 #:validators 'x 'y 'z))
+  (check-true (qset/c qset-4))
   (define qset-5
-    (qset/kw #:threshold 2 #:validators (set) #:inner-qsets (set qset-1 qset-3 qset-4)))
+    (mk-qset #:threshold 2 #:inner-qsets qset-1 qset-3 qset-4))
+  (check-true (qset/c qset-5))
   (define qset-6
-    (qset/kw #:threshold 2 #:validators (seteqv 'A) #:inner-qsets (set qset-1 qset-3 qset-4)))
+    (mk-qset #:threshold 2 #:validators 'A #:inner-qsets qset-1 qset-3 qset-4))
+  (check-true (qset/c qset-6))
 
   ; we now check that equal? on qsets behaves as we expect:
   (check-true
@@ -136,12 +168,6 @@
         #:validators (seteqv)
         #:inner-qsets (set (qset/kw #:threshold 2 #:validators (seteqv 1 2 3) #:inner-qsets (set)))))
     (seteqv 1 2 3)))
-
-(define (qset/c q)
-  (struct/dc qset
-             [threshold (and/c (< 0 (qset-threshold q)) (<= (qset-threshold q) (set-count (qset-elements q))))]
-             [validators (set/c node/c #:cmp 'eqv)]
-             [inner-qsets (set/c qset/c #:cmp 'equal)]))
 
 (define (reachable-inner-qsets q)
   (define iqs
@@ -512,15 +538,43 @@
       (list p q)))
   (unweighted-graph/directed edges))
 
-(define (non-transitive-intersection? network)
-  (unless (flat-qsets? network)
+; heuristic that is sound (i.e. if it returns true, then the qsets are intertwined) but not complete
+(define (intertwined?/incomplete q1 q2)
+  (define inter
+    (set-intersect
+      (qset-elements q1) (qset-elements q2)))
+  (and
+    (>
+      (+ (qset-threshold q1) (qset-threshold q2) (set-count inter))
+      (+ (set-count (qset-elements q1)) (set-count (qset-elements q2))))
+    (for/and ([e inter])
+      (or
+        (not (qset? e))
+        (and
+          (set-empty? (qset-inner-qsets e))
+          (> (* 2 (qset-threshold e)) (set-count (qset-validators e))))))))
+
+#;(module+ test
+  (check-true
+    (intertwined?/incomplete
+      )))
+
+; TODO: only for flat networks:
+(define (non-transitive-intersection? ps network)
+  (unless (for/and ([p ps])
+            (set-empty? (qset-inner-qsets (dict-ref network p))))
     (error "all qsets must be flat"))
     (for*/and ([(p1 q1) (in-dict network)]
-               [(p2 q2) (in-dict network)])
+               #:when (set-member? ps p1)
+               [(p2 q2) (in-dict network)]
+               #:when (set-member? ps p2))
       (define inter (set-intersect (qset-validators q1) (qset-validators q2)))
       (>
         (+ (qset-threshold q1) (qset-threshold q2) (set-count inter))
         (+ (set-count (qset-validators q1)) (set-count (qset-validators q2))))))
+
+; TODO test network with 4 orgs, global threshold 3, inner 2/3; play with variations
+; TODO bigger network to test having some orgs that screw up their config
 
 (module+ test
   (define g1 (network-to-graph network-1))
@@ -544,7 +598,7 @@
 
   (define collapsed-bscc-network (collapse-qsets bscc-network))
   (check-true (flat-qsets? collapsed-bscc-network))
-  (check-true (non-transitive-intersection? collapsed-bscc-network))
+  (check-true (non-transitive-intersection? (dict-keys bscc-network) collapsed-bscc-network))
 
   (define flattened-stellar-network (flatten-qsets stellar-network))
   (check-true (flat-qsets? flattened-stellar-network))
