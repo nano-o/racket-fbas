@@ -554,10 +554,117 @@
           (set-empty? (qset-inner-qsets e))
           (> (* 2 (qset-threshold e)) (set-count (qset-validators e))))))))
 
-#;(module+ test
+(module+ test
   (check-true
     (intertwined?/incomplete
-      )))
+      (mk-qset
+        #:threshold 2
+        #:inner-qsets
+          (mk-qset
+            #:threshold 2
+            #:validators 'a 'b 'c)
+          (mk-qset
+            #:threshold 2
+            #:validators 'x 'y 'z)
+          (mk-qset
+            #:threshold 2
+            #:validators 1 2 3))
+      (mk-qset
+        #:threshold 2
+        #:inner-qsets
+          (mk-qset
+            #:threshold 2
+            #:validators 'a 'b 'c)
+          (mk-qset
+            #:threshold 2
+            #:validators 'x 'y 'z)
+          (mk-qset
+            #:threshold 2
+            #:validators 1 2 3))))
+    (check-false
+      (intertwined?/incomplete
+        (mk-qset
+          #:threshold 2
+          #:inner-qsets
+          (mk-qset
+            #:threshold 2
+            #:validators 'a 'b 'c)
+          (mk-qset
+            #:threshold 2
+            #:validators 'x 'y 'z)
+          (mk-qset
+            #:threshold 2
+            #:validators 1 2 3))
+        (mk-qset
+          #:threshold 2
+          #:inner-qsets
+          (mk-qset
+            #:threshold 2
+            #:validators 'a 'b 'c)
+          (mk-qset
+            #:threshold 1
+            #:validators 'x 'y 'z)
+          (mk-qset
+            #:threshold 2
+            #:validators 1 2 3))))
+    (check-true
+      (intertwined?/incomplete
+        (mk-qset
+          #:threshold 2
+          #:inner-qsets
+          (mk-qset
+            #:threshold 2
+            #:validators 'a 'b 'c)
+          (mk-qset
+            #:threshold 2
+            #:validators 'x 'y 'z)
+          (mk-qset
+            #:threshold 2
+            #:validators 1 2 3))
+        (mk-qset
+          #:threshold 3
+          #:inner-qsets
+          (mk-qset
+            #:threshold 2
+            #:validators 100 101 102)
+          (mk-qset
+            #:threshold 2
+            #:validators 'a 'b 'c)
+          (mk-qset
+            #:threshold 2
+            #:validators 'x 'y 'z)
+          (mk-qset
+            #:threshold 2
+            #:validators 1 2 3))))
+    (check-false
+      (intertwined?/incomplete
+        (mk-qset
+          #:threshold 2
+          #:inner-qsets
+          (mk-qset
+            #:threshold 2
+            #:validators 'a 'b 'c)
+          (mk-qset
+            #:threshold 2
+            #:validators 'x 'y 'z)
+          (mk-qset
+            #:threshold 2
+            #:validators 1 2 3))
+        (mk-qset
+          #:threshold 3
+          #:inner-qsets
+          (mk-qset
+            #:threshold 2
+            #:validators 100 101 102)
+          (mk-qset
+            #:threshold 3
+            #:validators 'a 'b 'c 'd)
+          (mk-qset
+            #:threshold 2
+            #:validators 'x 'y 'z)
+          (mk-qset
+            #:threshold 2
+            #:validators 1 2 3)))))
 
 ; TODO: only for flat networks:
 (define (non-transitive-intersection? ps network)
