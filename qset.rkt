@@ -4,8 +4,11 @@
 (require
   graph ; for computing strongly connected components
   syntax/parse/define
-  racket/trace
-  racket/pretty)
+  sugar
+  ; racket/trace
+  ; racket/pretty
+  ; sugar/debug
+  "cliques.rkt")
 
 ; TODO qset->slices (for flat qsets is enough)
 ; TODO projection onto a set
@@ -31,14 +34,15 @@
     [collapse-qsets (-> stellar-network/c stellar-network/c)])
   invert-qset-map
   nodes-without-qset
-  add-missing-qsets)
+  add-missing-qsets
+  network-intertwined?/incomplete)
 
 (module+ test
   (require rackunit))
 
 ; a node is something for which eqv? is semantic equivalence, i.e. symbols, numbers, and characters.
 (define node/c
-  (or/c boolean? symbol? number? char?))
+  (or/c symbol? number? char?))
 
 ; validators must be a seteqv
 ; inner-qsets must be a set
@@ -539,7 +543,8 @@
   (unweighted-graph/directed edges))
 
 ; heuristic that is sound (i.e. if it returns true, then the qsets are intertwined) but not complete
-(define (intertwined?/incomplete q1 q2)
+; results are cached (NOTE the cache uses `equal?`)
+(define/caching (intertwined?/incomplete q1 q2)
   (define inter
     (set-intersect
       (qset-elements q1) (qset-elements q2)))
@@ -666,6 +671,13 @@
             #:threshold 2
             #:validators 1 2 3)))))
 
+(define (intertwined-graph P net)
+  (define edges
+    (for*/list ([p1 P] [p2 P]
+                #:when (intertwined?/incomplete (dict-ref net p1) (dict-ref net p2)))
+      (list p1 p2)))
+  (unweighted-graph/undirected edges))
+
 ; TODO: only for flat networks:
 (define (non-transitive-intersection? ps network)
   (unless (for/and ([p ps])
@@ -680,6 +692,34 @@
         (+ (qset-threshold q1) (qset-threshold q2) (set-count inter))
         (+ (set-count (qset-validators q1)) (set-count (qset-validators q2))))))
 
+(define (max-scc g)
+    (car (sort (scc g) (λ (l1 l2) (> (length l1) (length l2))))))
+
+(define (all-pairs-intertwined?/incomplete P network)
+  (for*/and ([p1 P] [p2 P])
+    (intertwined?/incomplete (dict-ref network p1) (dict-ref network p2))))
+
+(define (shows-intertwined P network)
+  (cond
+    [(not (set=? (closure P network) (apply set (dict-keys network))))
+     (displayln "Closure does not cover the whole network")
+     #f]
+    [(all-pairs-intertwined?/incomplete P network) #t]
+    [else #f]))
+
+(define (network-intertwined?/incomplete network)
+  (define mscc
+    (apply set (max-scc (network-to-graph network))))
+  (cond
+    [(shows-intertwined mscc network) #t]
+    [else
+      ; TODO this is useless in its current form (it's too expensive to compute all cliques upfront)
+      ; What we need is a heuristic to efficiently compute an on-demand stream of large cliques
+      (displayln "WARNING: taking exponential branch")
+      (define max-cliques (find-maximal-cliques (intertwined-graph mscc network)))
+      (for/or ([mc max-cliques])
+        (shows-intertwined mc network))]))
+
 ; TODO test network with 4 orgs, global threshold 3, inner 2/3; play with variations
 ; TODO bigger network to test having some orgs that screw up their config
 
@@ -693,22 +733,24 @@
     (with-input-from-file
       "./stellarbeat.data"
       (thunk (deserialize (read)))))
-  (define bscc ; biggest scc
-    (car (sort (scc (network-to-graph stellar-network)) (λ (l1 l2) (> (length l1) (length l2))))))
-  (define bscc-network
-    (for/list ([(p q) (in-dict stellar-network)]
-               #:when (set-member? bscc p))
-      (cons p q)))
+  (network-intertwined?/incomplete stellar-network)
 
-  (set-count (apply set (dict-values bscc-network)))
-  (set-count (reachable-inner-qsets (car (dict-values bscc-network))))
+  ; (define bscc ; biggest scc
+    ; (car (sort (scc (network-to-graph stellar-network)) (λ (l1 l2) (> (length l1) (length l2))))))
+  ; (define bscc-network
+    ; (for/list ([(p q) (in-dict stellar-network)]
+               ; #:when (set-member? bscc p))
+      ; (cons p q)))
 
-  (define collapsed-bscc-network (collapse-qsets bscc-network))
-  (check-true (flat-qsets? collapsed-bscc-network))
-  (check-true (non-transitive-intersection? (dict-keys bscc-network) collapsed-bscc-network))
+  ; (set-count (apply set (dict-values bscc-network)))
+  ; (set-count (reachable-inner-qsets (car (dict-values bscc-network))))
 
-  (define flattened-stellar-network (flatten-qsets stellar-network))
-  (check-true (flat-qsets? flattened-stellar-network))
+  ; (define collapsed-bscc-network (collapse-qsets bscc-network))
+  ; (check-true (flat-qsets? collapsed-bscc-network))
+  ; (check-true (non-transitive-intersection? (dict-keys bscc-network) collapsed-bscc-network))
+
+  ; (define flattened-stellar-network (flatten-qsets stellar-network))
+  ; (check-true (flat-qsets? flattened-stellar-network))
   #;(set-count (flat-closure (apply seteqv biggest-scc) flattened-stellar-network))
   #;(set-count (closure (apply set biggest-scc) stellar-network))
   #;(set-count (network-members flattened-stellar-network)))
