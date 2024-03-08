@@ -1,15 +1,17 @@
-#lang racket
-; #lang errortrace racket
+; #lang racket
+#lang errortrace racket
 
 ; Functions to generate the formula that characterizes the intertwinedness of a qset configuration.
 
 (require
-  "qset.rkt")
+  "qset.rkt"
+  (only-in sugar ->string))
 
 (provide
   qset-characteristic-fmla)
 
 ; creates a datum representing the formula
+; TODO provide a set of points to check are intertwined; this might not be all points e.g. if some are deemed faulty
 (define (qset-characteristic-fmla network)
   (define points-to-check (dict-keys network))
   ; first flatten the network
@@ -19,8 +21,7 @@
   (define symbols-map
     (for/hash ([p (dict-keys flat-network)])
       ; we create symbols with $ at the beginning to avoid any clash with 3vl value ('t, 'b, and 'f).
-      (unless (node/c p) (error (format "cannot handle ~v" p)))
-      (values p (string->symbol (format "$~a" (if (symbol? p) (symbol->string p) p))))))
+      (values p (string->symbol (string-append "$" (->string p))))))
   (define (negate p)
     `(¬ ,p))
   (define (closedAx q ps polarity)
@@ -46,7 +47,7 @@
             [polarity (list identity negate)])
            (closedAx q ps polarity))))
   (define fmla
-    ; NOTE we only need to check equivalence of the original points, not the points introduced during flattening
+    ; NOTE we only need to check equivalence of the original points, not the points introduced during flattening/collapsing
     `(⇒ ,ax (≡* ,@(for/list ([p points-to-check]) (dict-ref symbols-map p)))))
   fmla)
 
