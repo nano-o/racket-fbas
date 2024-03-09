@@ -13,25 +13,30 @@
     racket/syntax))
 
 (provide
-  ∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B ; These are the logical connectives
-  ∧* ∨* ≡* ; versions of the connectives that take lists of logical values
-  truth-values
-  designated-value?
-  eval/3
-  free-vars
-  interpretations)
+  truth-values ; 't, 'b, and 'f
+  ∧ ∨ ⇒ ⊃ ⇔ ≡ ; binary logical operations
+  ¬ ◇ □ B ; unary logical operations
+  ∧* ∨* ≡* ; nary logical operations
+  designated-value? ; 't and 'b
+  eval/3 ; evaluate a formula in an environment
+  free-vars ; the set of free variables in a formula
+  interpretations ; lazy stream of all possible assignements to the provided variables
+  (for-syntax uops))
 
-; NOTE => (rosette) is not ⇒
-; NOTE <=> (rosette) is not ⇔
+; NOTE => (defined by rosette) is not ⇒
+; NOTE <=> (defined by rosette) is not ⇔
 
 ; The logical values are 't, 'b, and 'f (true, both, and false)
 (define truth-values '(t b f))
 
-; TODO collect those in macro phase when defining them?
-; then we could use the struct/procedure trick to make those available at runtime
 (define uops '(¬ ◇ □ B))
-(define bops '(∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B))
+(define bops '(∧ ∨ ¬ ⇒ ⊃ ⇔ ≡))
 (define nops '(∧* ∨* ≡*))
+; We also make the lists of operations available for macros:
+(begin-for-syntax
+  (define uops (list #'¬ #'◇ #'□ #'B))
+  (define bops (list #'∧ #'∨ #'⇒ #'≡ #'⊃ #'⇔))
+  (define nops (list #'∧* #'∨* #'≡*)))
 
 ; 't and 'b are the designated values
 (define (designated-value? v)
@@ -54,30 +59,18 @@
                (for/list ([e (syntax->list l)])
                  (syntax->datum e))))
            (define num-inputs
-             (length (car rows/datum)))
-           (define combinations
-             (apply cartesian-product
-                    (make-list num-inputs '(t b f))))
-           (define has-all-combinations
-             (set=? combinations rows/datum))]
-     #:fail-when
-       (not (for/and ([l rows/datum])
-              (equal? (length l) num-inputs)))
-       "some rows have different sizes"
-     #:fail-when
-       (not has-all-combinations)
-       (format "missing combinations of inputs: ~a" (set-subtract combinations rows/datum))
+             (length (car rows/datum)))]
      (with-syntax
          ([(arg ...)
            (for/list ([i (in-range num-inputs)])
              (format-id #'operation "arg-~a" i))])
        #'(define (operation arg ...)
          (case (list arg ...)
-           [((value ...)) (quote result)] ...
-           #;[else 'error])))]))
+           [((value ...)) (quote result)] ...)))]))
 
-; A macro to check an equivalence by exhaustive enumeration
-(define-syntax-parser always-#t?
+; A macro to check that a procedure returns true no matter what 3vl values it's given
+; Use e.g. like this for a function f that takes two arguments: (always-#t? f p q)
+(define-syntax-parser for-3values*/and
   [(_ (f:id arg ...))
    #`(for*/and ([arg truth-values] ...) ; NOTE the * in for* is crucial here
        (f arg ...))])
@@ -111,7 +104,7 @@
         {p ∧ {q ∧ r}}
         (∧* p q r)))]
     (check-true
-      (always-#t? (test-eq p q r))))
+      (for-3values*/and (test-eq p q r))))
 
   ; the empty conjunction:
   (check-equal? (∧*) 't))
@@ -141,7 +134,7 @@
         {p ∨ {q ∨ r}}
         (∨* p q r)))]
     (check-true
-      (always-#t? (test-eq p q r))))
+      (for-3values*/and (test-eq p q r))))
 
   ; empty disjunction is 'f:
   (check-equal? (∨*) 'f))
@@ -217,13 +210,13 @@
          (∧* {p ≡ q} {p ≡ s} {p ≡ r} {q ≡ r} {q ≡ s}  {r ≡ s})
          (≡* p q r s)))]
     (check-false
-      (always-#t? (test-expr-1 p q r)))
+      (for-3values*/and (test-expr-1 p q r)))
     (check-true
-      (always-#t? (test-expr-2 p q r)))
+      (for-3values*/and (test-expr-2 p q r)))
     (check-false
-      (always-#t? (test-expr-3 p q r)))
+      (for-3values*/and (test-expr-3 p q r)))
     (check-true
-      (always-#t? (test-expr-4 p q r s)))))
+      (for-3values*/and (test-expr-4 p q r s)))))
 
 (define-truth-table (¬ p)
   [t f]
@@ -246,34 +239,38 @@
   [f f])
 
 ;; Evaluator for formulas
-;; TODO move to separate file
+;; TODO move to separate file?
 
-(define-syntax-parser make-evaluator
-  [(_
-     #:name f
-     #:unary (uop ...)
-     #:binary (bop ...)
-     #:nary (nop ...))
-  #`(define (f env fmla)
-      (match fmla
-        [`(uop ,e) (uop (f env e))]
-        ...
-        [`(bop ,e1 ,e2) (bop (f env e1) (f env e2))]
-        ...
-        [`(nop ,e (... ...)) (apply nop (map (λ (e) (f env e)) e))] ; NOTE (... ...) is a quoted ellipsis
-        ...
-        [v
-          #:when (member v truth-values)
-          v]
-        [v
-          #:when (symbol? v)
-          (dict-ref env v)]))])
+#;(define (eval/3 env fmla)
+  (match fmla
+    [`(,uop ,subfmla) ((eval uop) (eval/3 env subfmla))]
+    [`(,bop ,sub1 ,sub2) ((eval bop) (eval/3 env sub1) (eval/3 env sub2))]
+    [`(,nop ,subfmlas ...) (apply (eval nop) (map (λ (f) (eval/3 env f)) subfmlas))]
+    [v #:when (member v truth-values) v]
+    [v #:when (symbol? v) (dict-ref env v)]))
 
-(make-evaluator
-  #:name eval/3
-  #:unary (¬ ◇ □ B)
-  #:binary (∧ ∨ ¬ ⇒ ⊃ ⇔ ≡ ◇ □ B)
-  #:nary (∧* ∨* ≡*))
+; TODO does this need to be a macro?
+(define-syntax make-evaluator
+  (λ (stx)
+   (with-syntax ([(uop ...) uops]
+                 [(bop ...) bops]
+                 [(nop ...) nops]
+                 [eval-proc (format-id stx "~a" "eval/3")])
+     #`(define (eval-proc env fmla)
+         (match fmla
+           [`(uop ,e) (uop (eval-proc env e))]
+           ...
+           [`(bop ,e1 ,e2) (bop (eval-proc env e1) (eval-proc env e2))]
+           ...
+           [`(nop ,e (... ...)) (apply nop (map (λ (e) (eval-proc env e)) e))] ; NOTE (... ...) is a quoted ellipsis
+           ...
+           [v #:when (member v truth-values)
+              v]
+           [v #:when (symbol? v)
+              (dict-ref env v)])))))
+(make-evaluator)
+
+; (make-evaluator eval/3)
 
 (define (free-vars fmla)
   (match fmla
@@ -319,6 +316,7 @@
       (stream-lazy (explore-stream f (stream-rest s))))
     (stream)))
 
+; TODO why do we need this when we have always-#t? streams are very slow anyway
 (define (interpretations vars)
   ; creates a lazy stream of all possible interpretations of the variables
   (define (cases v inter)
