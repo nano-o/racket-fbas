@@ -2,6 +2,7 @@
 
 (require
   "truth-tables.rkt"
+  (only-in sugar define/caching)
   racket/trace
   racket/generator
   racket/match)
@@ -11,6 +12,11 @@
   t-or-b?
   equiv-fmlas?
   debug)
+
+; (begin-for-syntax
+  ; (println uops))
+; (define-syntax test (λ (_) (car uops)))
+; ((test) 't)
 
  ; given a tvl formula, generates a boolean formula that is valid if and only if the original tvl formula is valid
 
@@ -194,28 +200,24 @@
              ; (&& (! ,one-b) ,(is-t p))))))
 
 ; TODO: could be done tail recursive: create vars for subformulas, create constraint, pass vars to recursive call
+; TODO: use memoize, or use make-caching-prog or define/caching in sugar
 (define (3to2 fmla)
   (define cs (mutable-set)) ; we'll collect the constraints here
   (define vars (mutable-set)) ; we'll collect boolean variables here TODO why?
-  (define fmla-to-vars (make-hash))
-  (define (3to2-rec f)
-    ; first we generate symbols f+ and f-
+  (define/caching (3to2-rec f)
+    ; Here we want to create a 3vl variable for f and relate it the the 3vl variable corresponding to its constituant subformulas
+    ; We'll return the two 3vl variable f- and f+ and the constraint
     (define f-+
       (cond
         [(debug)
-         `(,(string->symbol (format "~a-" f)) . ,(string->symbol (format "~a+" f)))]
-        [(symbol? f)
-         `(,(string->symbol (format "~a-" f)) . ,(string->symbol (format "~a+" f)))]
-        [(hash-has-key? fmla-to-vars f) (hash-ref fmla-to-vars f)]
-        [else `(,(gensym) . ,(gensym))]))
+         (cons (string->symbol (format "~a-" f)) (string->symbol (format "~a+" f)))]
+        [(symbol? f) ; f is a variable; it has no subformulas
+         (cons (string->symbol (format "~a-" f)) (string->symbol (format "~a+" f)))]
+        [else (cons (gensym) (gensym))]))
     (set-add! vars (car f-+))
     (set-add! vars (cdr f-+))
-    (when (not (hash-has-key? fmla-to-vars f))
-      (hash-set! fmla-to-vars f f-+))
     (define (process-sub sub-f)
-      (if (hash-has-key? fmla-to-vars sub-f)
-        (hash-ref fmla-to-vars sub-f)
-        (3to2-rec sub-f)))
+        (3to2-rec sub-f))
     (define constraint
       (match f ; TODO macro
         [(? symbol?) #:when (member f truth-values) ((is-tv f) f-+)]
@@ -260,7 +262,7 @@
   ; finally, return the variables and the constraint
   (define constraint
     `(=> ,c (|| ,(is-t p) ,(is-b p))))
-  `(,vars . ,constraint))
+  `(,vars . ,constraint)) ; TODO vars not needed
 
 (define (equiv-fmlas? f1 f2)
   (match-define `(,p1 ,vars1 . ,c1) (3to2 f1))
@@ -273,6 +275,7 @@
          (<=> ,(is-f p1) ,(is-f p2))
          (<=> ,(is-b p1) ,(is-b p2)))))
  ; NOTE this relies on the fact that the boolean variables representing the base tvl variable are the same in both c1 and c2
+ ; TODO vars not needed
   `(,(set-union (set) vars1 vars2) . ,constraint)) ; (set) because of https://github.com/racket/racket/issues/2583
 
 #;(module+ verification
