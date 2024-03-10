@@ -3,6 +3,8 @@
 
 ; Functions to generate the formula that characterizes the intertwinedness of a qset configuration.
 
+; TODO try with the extremal val fmla
+
 (require
   "qset.rkt"
   (only-in sugar ->string))

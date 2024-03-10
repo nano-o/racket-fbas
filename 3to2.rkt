@@ -80,7 +80,7 @@
   (define cs (mutable-set)) ; we'll collect the constraints here
   (define vars (mutable-set)) ; we'll collect boolean variables here TODO why?
   (define (truth-tables-eval op)
-    (eval op (module->namespace "truth-tables.rkt"))) ; TODO would using a macro be more performant?
+    (eval op (module->namespace "truth-tables.rkt"))) ; TODO would using a macro result in faster code?
   (define/caching (3to2-rec f)
     ; Here we want to create a 3vl variable for f and relate it the the 3vl variable corresponding to its constituant subformulas
     ; We'll return the two 3vl variable f- and f+ and the constraint

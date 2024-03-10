@@ -38,8 +38,8 @@
                   (method ((curry check-intertwined/sat) check-valid-using-3to2))]
       [("--symex") "check validity by symbolically executing the 3-valued logic interpreter"
                    (method ((curry check-intertwined/sat) valid/3?))]
-      [("--incomplete") "use incomplete heuristic"
-                  (method network-intertwined?/incomplete)]
+      [("--fast") "use incomplete heuristic and fall-back on 3to2"
+                  (method (λ (net) (or (network-intertwined?/incomplete net) (check-intertwined/sat check-valid-using-3to2 net))))]
       #:args ([filename #f]) filename))
 
   (if file
