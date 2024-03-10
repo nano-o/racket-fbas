@@ -1,4 +1,5 @@
 #lang racket
+; #lang errortrace racket
 
 (require
   "truth-tables.rkt"
@@ -12,7 +13,7 @@
 
  ; given a tvl formula, generates a boolean formula that is valid if and only if the original tvl formula is valid
 
-; The idea is that, for each sub-formula f, we create two boolean variables f- and f+ that encode the tvl truth value of the formula (i.e. 00 is 'f, 01 and 10 is 'b, and 11 is 't). Then we just apply the truth tables to express the truth value of a formula in terms of the truth value of its subformulas.
+; The idea is that, for each sub-formula f, we create two boolean variables f- and f+ that encode the tvl truth value of the formula (i.e. 00 is 'f, 01 and 10 is 'b, and 11 is 't). Then we follow the truth tables to express the truth value of a formula in terms of the truth value of its subformulas.
 
 ; We encode 3vl values as pairs of booleans
 (define (is-f p) ; f is 10
@@ -40,6 +41,40 @@
     ((is-tv 'f) '(p . q))
     '(&& p (! q))))
 
+(define (rewrite-big-ops f)
+  ; a drawback of this is that it increases the number of subformulas, and thus the number of variables and constraints that will be produced by 3to2 below, which results in (very) bad performance
+  (match f
+    [`(∧* ,q ...)
+      #:when (> (length q) 2)
+      `(∧ ,(rewrite-big-ops (car q)) ,(rewrite-big-ops `(∧* ,@(cdr q))))]
+    [`(∧* ,q1 ,q2)
+      `(∧ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    ['(∧*) 't]
+    [`(∨* ,q ...)
+      #:when (> (length q) 2)
+      `(∨ ,(rewrite-big-ops (car q)) ,(rewrite-big-ops `(∨* ,@(cdr q))))]
+    [`(∨* ,q1 ,q2)
+      `(∨ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    ['(∨*) 'f]
+    [`(≡* ,q ...)
+      #:when (> (length q) 2)
+      (define subfs (map rewrite-big-ops q))
+      (define head-eqs
+        (for/fold
+          ([acc 't])
+          ([f (cdr subfs)])
+          `(∧ (≡ ,(car subfs) ,f) ,acc)))
+      `(∧ ,head-eqs ,(rewrite-big-ops `(≡* ,@(cdr subfs))))] ; TODO is this even correct?
+    [`(≡* ,q1 ,q2)
+      `(≡ ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    ['(≡*) (error "empty equivalence")]
+    [`(,bop ,q1 ,q2)
+      `(,bop ,(rewrite-big-ops q1) ,(rewrite-big-ops q2))]
+    [`(,uop ,q)
+      `(,uop ,(rewrite-big-ops q))]
+    [(and sym (? symbol?)) sym]
+    [x (error (format "unhandled case: ~a" x))]))
+
 (define (3to2 fmla)
   ; TODO make functional?
   (define cs (mutable-set)) ; we'll collect the constraints here
@@ -60,6 +95,8 @@
       (match f
         [(? symbol?) #:when (member f truth-values) ((is-tv f) f-+)]
         [(? symbol?) #t]
+        [`(∧*) (is-t f-+)]
+        [`(∨*) (is-f f-+)]
         [`(,uop ,subf)
           (define subf-+ (3to2-rec subf))
           `(||
@@ -73,7 +110,7 @@
                          [v2 truth-values])
                 `(&& ,((is-tv v1) subf1-+) ,((is-tv v2) subf2-+) ,((is-tv ((truth-tables-eval bop) v1 v2)) f-+))))]
         ; We do something a bit ad-hoc for the * operations
-        ; TODO does it have any advantage over translating to bops?
+        ; This improves performance a lot compared to first rewriting the big ops
         [`(∧* ,subf ...)
           (define subf-+ (map 3to2-rec subf))
           (define one-f
@@ -134,66 +171,3 @@
  ; NOTE this relies on the fact that the boolean variables representing the base tvl variable are the same in both c1 and c2
  ; TODO vars not needed
   `(,(set-union (set) vars1 vars2) . ,constraint)) ; (set) because of https://github.com/racket/racket/issues/2583
-
-#;(module+ verification
-
-  ; TODO: translate diretly to smtlib instead of using eval...
-
-  (require rosette)
-  (provide
-    verify-valid
-    verify-equiv-fmlas)
-
-  (define (make-verify-encoded-fmla vars constraints)
-    ; this is meant to be evaluated in the context of the rosette module
-    `(begin
-       (define-symbolic ,@(set->list vars) boolean?)
-       (define solver (current-solver))
-       (solver-assert solver (list (! ,constraints)))
-       (define sol (solver-check solver))
-       (solver-clear solver)
-       sol))
-
-  (define (verify-valid fmla)
-    (match-define `(,vars . ,constraints)
-      (parameterize ([debug #f]) (t-or-b? fmla)))
-    (eval (make-verify-encoded-fmla vars constraints) (module->namespace 'rosette)))
-
-  (define (verify-equiv-fmlas f1 f2)
-    (match-define `(,vars . ,constraints)
-      (parameterize ([debug #f]) (equiv-fmlas? f1 f2)))
-    (eval (make-verify-encoded-fmla vars constraints) (module->namespace 'rosette))))
-
-
-#;(module+ test
-  (require
-    (submod ".." verification)
-    rosette)
-
-  (define (equiv? f1 f2)
-    (not (sat? (verify-equiv-fmlas f1 f2))))
-  (define (valid? f)
-    (not (sat? (verify-valid f))))
-
-  (check-true (valid? '(≡ p (¬ (¬ p)))))
-  (check-true (equiv? 'p '(¬ (¬ p))))
-
-  (define test-fmla-2 '(≡ (∨ p q) (¬ (∧ (¬ p) (¬ q)))))
-  (check-true (valid? test-fmla-2))
-
-  (define test-fmla-3 '(≡ (∧ p q) (¬ (∨ (¬ p) (¬ q)))))
-  (check-true (valid? test-fmla-3))
-
-  (define test-fmla-4 '(∧ (∨ (¬ p) p) (∨ p (¬ p))))
-  (check-true (valid? test-fmla-4))
-
-  (define test-fmla-5 '(∨ p (¬ p)))
-  (check-true (valid? test-fmla-5))
-
-  (define test-fmla-6 '(∧ p (¬ p)))
-  (check-false (valid? test-fmla-6))
-
-  (define test-fmla-7 '(∧* (∨* (¬ p) p) (∨* p (¬ p))))
-  (check-true (valid? test-fmla-7))
-
-  (check-true (equiv? '{≡ p  q} '{∧ {∨ (¬ p)  q} {∨ p (¬ q)}})))
