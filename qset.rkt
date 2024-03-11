@@ -5,6 +5,7 @@
   graph ; for computing strongly connected components
   syntax/parse/define
   sugar
+  racket/random
   ; racket/trace
   ; racket/pretty
   ; sugar/debug
@@ -14,6 +15,7 @@
 ; TODO projection onto a set
 ; TODO intersection check and quorum check when all orgs can be collapsed and all validators have qset that's a threshold of orgs (easy in that case...). Also easy to compute resilience bounds. Even whether the network is "resilient".
 ; TODO good-case check: find maximal scc, check closure is whole network; find maximal clique of intertwined members of the scc (with heuristic); if not the whole scc, check closure of the clique is the whole network; if failure we can try another clique (we expect to have a big maximal clique that should be easy to hit).
+; TODO non-intersection good case? If closure of scc is not whole set, can we find a quorum in its complement? Not necessarily. We can if it is a quorum. A pair of nodes may fail the cheap intertwinedness check; then we do a more thourough direct intertwinedness check (essentially enumerating their slices). Any other easy cases?
 
 (provide
   (contract-out
@@ -700,21 +702,47 @@
     (intertwined?/incomplete (dict-ref network p1) (dict-ref network p2))))
 
 (define (shows-intertwined P network)
+  (define nodes (apply set (dict-keys network)))
   (cond
-    [(not (set=? (closure P network) (apply set (dict-keys network))))
+    [(not (set=? (closure P network) nodes))
      (displayln "Closure does not cover the whole network")
      #f]
-    [(all-pairs-intertwined?/incomplete P network) #t]
-    [else #f]))
+    [(all-pairs-intertwined?/incomplete P network)
+     #t]
+    [else
+      (for/or ([_ (range 1 10)]) ; we'll try 10 random cliques
+        (set=? (closure (random-clique P network) network) nodes))]))
+
+(define (random-clique P network)
+  (for/fold ([rejected (set)]
+             [clique (set)]
+             #:result clique)
+            ([p (shuffle (set->list P))])
+    (define in-clique
+      (for/and ([p2 clique])
+        (intertwined?/incomplete (dict-ref network p) (dict-ref network p2))))
+    (values
+      (if in-clique rejected (set-add rejected p))
+      (if in-clique (set-add clique p) clique))))
+
+; (module+ test
+  ; (random-seed (integer-bytes->integer (crypto-random-bytes 2) #f))
+  ; (random-clique
+    ; '(1 2 3 a b c)
+    ; (append
+      ; (for/list ([p '(1 2 3)]) (cons p (mk-qset #:threshold 2 #:validators 1 2 3)))
+      ; (for/list ([p '(a b c)]) (cons p (mk-qset #:threshold 2 #:validators 'a 'b 'c))))))
 
 (define (network-intertwined?/incomplete network)
   (define mscc
     (apply set (max-scc (network-to-graph network))))
   (cond
     [(shows-intertwined mscc network) #t]
-    [else
+    [else #f]
+    #;[else
       ; TODO this is useless in its current form (it's too expensive to compute all cliques upfront)
       ; What we need is a heuristic to efficiently compute an on-demand stream of large cliques
+      ; Since we expect a big clique, pick a node, compute a clique, and if it doesn't work pick a node in the complement of the clique and try again; maybe then give up if that does not work.
       (displayln "WARNING: taking exponential branch")
       (define max-cliques (find-maximal-cliques (intertwined-graph mscc network)))
       (for/or ([mc max-cliques])
