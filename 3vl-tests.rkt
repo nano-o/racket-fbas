@@ -26,7 +26,7 @@
        #`(module+ test
            (local [(define lhs f1) (define rhs f2)]
              #,(syntax/loc #'stx (check (check-eq-by-enumeration lhs rhs) "check failed according to eval/3"))
-             #,(syntax/loc #'stx (check (unsat? (SAT? `(! ,(cdr (equiv-fmlas? lhs rhs))))) "check failed according to SAT?"))
+             #,(syntax/loc #'stx (check (unsat? (SAT? `(! ,(equiv-fmlas? lhs rhs)))) "check failed according to SAT?"))
              #,(syntax/loc #'stx (check (unsat? (valid/3? `(eq? ,lhs ,rhs))) "check failed according to valid/3")))))])
 
 ; TODO check-valid

@@ -4,6 +4,7 @@
 (require
   "truth-tables.rkt"
   (only-in sugar define/caching)
+  ; racket/trace
   racket/match)
 
 (provide
@@ -41,6 +42,102 @@
     ((is-tv 'f) '(p . q))
     '(&& p (! q))))
 
+(define (eval-truth-table op)
+  (eval op (module->namespace "truth-tables.rkt")))
+
+(define/caching (3to2 fmla)
+    (define f-+ ; this is a pair of symbols
+      (cond
+        [(symbol? fmla) ; f is a variable; we use the original name. We rely on this when checking equivalence of two formulas
+         `(,(string->symbol (format "~a-" fmla)) . ,(string->symbol (format "~a+" fmla)))]
+        [else `(,(gensym) . ,(gensym))]))
+    (define constraints
+      (match fmla
+        [(? ((curryr member) truth-values)) (set ((is-tv fmla) f-+))]
+        [(? symbol?) (set)] ; symbol that's not a 3vl truth value; no constraint in that case
+        [`(∧*) (set (is-t f-+))]
+        [`(∨*) (set (is-f f-+))]
+        [`(,uop ,subf) ; unary operation
+          (match-define `(,subf-+ ,sub-constraints) (3to2 subf))
+          (define new-constraint
+            `(||
+            ,@(for/list ([v truth-values])
+                `(&& ,((is-tv v) subf-+) ,((is-tv ((eval-truth-table uop) v)) f-+)))))
+          (set-add sub-constraints new-constraint)]
+        ; We do something a bit ad-hoc for the * operations
+        ; This improves performance a lot compared to first rewriting the big ops
+        [`(∧* ,subf ...)
+          (match-define `((,subf-+ ,sub-constraints) ...) (map 3to2 subf))
+          (define one-f
+            `(|| ,@(map is-f subf-+)))
+          (define one-b
+            `(|| ,@(map is-b subf-+)))
+          (define new-constraint
+            `(||
+               (&& ,one-f ,(is-f f-+))
+               (&& (! ,one-f) ,one-b ,(is-b f-+))
+               (&& (! ,one-f) (! ,one-b) ,(is-t f-+))))
+          (set-add (apply set-union sub-constraints) new-constraint)]
+        [`(∨* ,subf ...)
+          (match-define `((,subf-+ ,sub-constraints) ...) (map 3to2 subf))
+          (define one-t
+            `(|| ,@(map is-t subf-+)))
+          (define one-b
+            `(|| ,@(map is-b subf-+)))
+          (define new-constraint
+            `(||
+               (&& ,one-t ,(is-t f-+))
+               (&& (! ,one-t) ,one-b ,(is-b f-+))
+               (&& (! ,one-t) (! ,one-b) ,(is-f f-+))))
+          (set-add (apply set-union sub-constraints) new-constraint)]
+        [`(≡* ,subf ...)
+          (match-define `((,subf-+ ,sub-constraints) ...) (map 3to2 subf))
+          (define one-t-one-f
+            `(&& (|| ,@(map is-f subf-+)) (|| ,@(map is-t subf-+))))
+          (define one-b
+            `(|| ,@(map is-b subf-+)))
+          (define new-constraint
+            `(||
+               (&& ,one-t-one-f ,(is-f f-+))
+               (&& (! ,one-t-one-f) ,one-b ,(is-b f-+))
+               (&& (! ,one-t-one-f) (! ,one-b) ,(is-t f-+))))
+          (set-add (apply set-union sub-constraints) new-constraint)]
+        [`(,bop ,subf1 ,subf2) ; binary operation
+          (match-define `(,subf1-+ ,sub-constraints1) (3to2 subf1))
+          (match-define `(,subf2-+ ,sub-constraints2) (3to2 subf2))
+          (define new-constraint
+            `(||
+               ,@(for*/list ([v1 truth-values]
+                             [v2 truth-values])
+                   `(&& ,((is-tv v1) subf1-+) ,((is-tv v2) subf2-+) ,((is-tv ((eval-truth-table bop) v1 v2)) f-+)))))
+          (set-add (set-union sub-constraints1 sub-constraints2) new-constraint)]))
+    `(,f-+ ,constraints))
+
+(module+ test
+  (check-equal?
+    (set-count (cadr (3to2 '(∧ (¬ (B p)) (¬ (B p))))))
+    3))
+
+(define (constraints-to-fmla cs)
+  (if (set-empty? cs)
+    #t
+    `(&& ,@(set->list cs))))
+
+(define (t-or-b? fmla) ; validity test
+  (match-define `(,p ,c) (3to2 fmla))
+  `(=> ,(constraints-to-fmla c) (|| ,(is-t p) ,(is-b p))))
+
+(define (equiv-fmlas? f1 f2)
+  (match-define `(,p1 ,c1) (3to2 f1))
+  (match-define `(,p2 ,c2) (3to2 f2))
+  ; NOTE this relies on the fact that the boolean variables representing the base tvl variable are the same in both c1 and c2
+  `(=>
+     (&& ,(constraints-to-fmla c1) ,(constraints-to-fmla c2))
+     (&&
+       (<=> ,(is-t p1) ,(is-t p2))
+       (<=> ,(is-f p1) ,(is-f p2))
+       (<=> ,(is-b p1) ,(is-b p2)))))
+
 (define (rewrite-big-ops f)
   ; a drawback of this is that it increases the number of subformulas, and thus the number of variables and constraints that will be produced by 3to2 below, which results in (very) bad performance
   (match f
@@ -75,99 +172,3 @@
     [(and sym (? symbol?)) sym]
     [x (error (format "unhandled case: ~a" x))]))
 
-(define (3to2 fmla)
-  ; TODO make functional?
-  (define cs (mutable-set)) ; we'll collect the constraints here
-  (define vars (mutable-set)) ; we'll collect boolean variables here TODO why?
-  (define (truth-tables-eval op)
-    (eval op (module->namespace "truth-tables.rkt"))) ; TODO would using a macro result in faster code?
-  (define/caching (3to2-rec f)
-    ; Here we want to create a 3vl variable for f and relate it the the 3vl variable corresponding to its constituant subformulas
-    ; We'll return the two 3vl variable f- and f+ and the constraint
-    (define f-+
-      (cond
-        [(symbol? f) ; f is a variable; it has no subformulas
-         (cons (string->symbol (format "~a-" f)) (string->symbol (format "~a+" f)))]
-        [else (cons (gensym) (gensym))]))
-    (set-add! vars (car f-+))
-    (set-add! vars (cdr f-+))
-    (define constraint
-      (match f
-        [(? symbol?) #:when (member f truth-values) ((is-tv f) f-+)]
-        [(? symbol?) #t]
-        [`(∧*) (is-t f-+)]
-        [`(∨*) (is-f f-+)]
-        [`(,uop ,subf)
-          (define subf-+ (3to2-rec subf))
-          `(||
-            ,@(for/list ([v truth-values])
-                `(&& ,((is-tv v) subf-+) ,((is-tv ((truth-tables-eval uop) v)) f-+))))]
-        [`(,bop ,subf1 ,subf2)
-          (define subf1-+ (3to2-rec subf1))
-          (define subf2-+ (3to2-rec subf2))
-          `(||
-            ,@(for*/list ([v1 truth-values]
-                         [v2 truth-values])
-                `(&& ,((is-tv v1) subf1-+) ,((is-tv v2) subf2-+) ,((is-tv ((truth-tables-eval bop) v1 v2)) f-+))))]
-        ; We do something a bit ad-hoc for the * operations
-        ; This improves performance a lot compared to first rewriting the big ops
-        [`(∧* ,subf ...)
-          (define subf-+ (map 3to2-rec subf))
-          (define one-f
-            `(|| ,@(map is-f subf-+)))
-          (define one-b
-            `(|| ,@(map is-b subf-+)))
-          `(||
-             (&& ,one-f ,(is-f f-+))
-             (&& (! ,one-f) ,one-b ,(is-b f-+))
-             (&& (! ,one-f) (! ,one-b) ,(is-t f-+)))]
-        [`(∨* ,subf ...)
-          (define subf-+ (map 3to2-rec subf))
-          (define one-t
-            `(|| ,@(map is-t subf-+)))
-          (define one-b
-            `(|| ,@(map is-b subf-+)))
-          `(||
-             (&& ,one-t ,(is-t f-+))
-             (&& (! ,one-t) ,one-b ,(is-b f-+))
-             (&& (! ,one-t) (! ,one-b) ,(is-f f-+)))]
-        [`(≡* ,subf ...)
-          (define subf-+ (map 3to2-rec subf))
-          (define one-t-one-f
-            `(&& (|| ,@(map is-f subf-+)) (|| ,@(map is-t subf-+))))
-          (define one-b
-            `(|| ,@(map is-b subf-+)))
-          `(||
-             (&& ,one-t-one-f ,(is-f f-+))
-             (&& (! ,one-t-one-f) ,one-b ,(is-b f-+))
-             (&& (! ,one-t-one-f) (! ,one-b) ,(is-t f-+)))]))
-    (set-add! cs constraint)
-    f-+)
-  (define p (3to2-rec fmla))
-  (define constraint
-    `(&& ,@(set->list cs)))
-  `(,p ,vars . ,constraint))
-
-(module+ test
-  (3to2 '(B p)))
-
-(define (t-or-b? fmla)
-  (match-define `(,p ,vars . ,c) (3to2 fmla))
-  ; finally, return the variables and the constraint
-  (define constraint
-    `(=> ,c (|| ,(is-t p) ,(is-b p))))
-  `(,vars . ,constraint)) ; TODO vars not needed
-
-(define (equiv-fmlas? f1 f2)
-  (match-define `(,p1 ,vars1 . ,c1) (3to2 f1))
-  (match-define `(,p2 ,vars2 . ,c2) (3to2 f2))
-  (define constraint
-    `(=>
-       (&& ,c1 ,c2)
-       (&&
-         (<=> ,(is-t p1) ,(is-t p2))
-         (<=> ,(is-f p1) ,(is-f p2))
-         (<=> ,(is-b p1) ,(is-b p2)))))
- ; NOTE this relies on the fact that the boolean variables representing the base tvl variable are the same in both c1 and c2
- ; TODO vars not needed
-  `(,(set-union (set) vars1 vars2) . ,constraint)) ; (set) because of https://github.com/racket/racket/issues/2583

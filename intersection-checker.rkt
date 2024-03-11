@@ -14,7 +14,7 @@
   check-intertwined/sat)
 
 (define (check-valid-using-3to2 fmla)
-  (SAT? `(! ,(cdr (t-or-b? fmla)))))
+  (SAT? `(! ,(t-or-b? fmla))))
 
 (define (check-intertwined/sat method network)
   (define char-fmla (qset-characteristic-fmla network))
