@@ -212,6 +212,48 @@
       (qset 2 (seteqv 'z 'y 'x) (set))
       (qset 2 (seteqv 'c 'b 'a) (set)))))
 
+(define (qset-empty? qs)
+  (empty? (qset-elements qs)))
+
+(define (ll->ss ll)
+  (list->set (map list->set ll)))
+
+(define (slices qs)
+  (define (slices-rec qs)
+    (define elem-slices
+      (for/list ([e (qset-elements qs)])
+        (cond
+          [(qset? e) (slices-rec e)]
+          [else (list (list e))])))
+    (define cs
+      (combinations elem-slices (qset-threshold qs)))
+    (apply
+      set-union
+      (cons null ; set-union fails with no arguments
+            (for/list ([c cs])
+              (for/list ([tuple (apply cartesian-product c)])
+                (apply set-union tuple))))))
+  (cond
+    [(qset-empty? qs)
+     (set)]
+    [else (ll->ss (slices-rec qs))]))
+
+(module+ test
+  (test-case
+    "slices"
+    (check-equal?
+      (slices qset-1)
+      (ll->ss '((1 2) (1 3) (2 3))))
+    (check-equal?
+      (slices qset-2)
+      (set))
+    (check-equal?
+      (slices qset-5)
+      (ll->ss '((1 2 a b) (1 2 a c) (1 2 b c) (1 3 a b) (1 3 a c) (1 3 b c) (2 3 a b) (2 3 a c) (2 3 b c) (1 2 x y) (1 2 x z) (1 2 y z) (1 3 x y) (1 3 x z) (1 3 y z) (2 3 x y) (2 3 x z) (2 3 y z) (a b x y) (a b x z) (a b y z) (a c x y) (a c x z) (a c y z) (b c x y) (b c x z) (b c y z))))
+    (check-equal?
+      (slices qset-6)
+      (ll->ss '((1 2 a b) (1 2 a c) (1 2 b c) (1 3 a b) (1 3 a c) (1 3 b c) (2 3 a b) (2 3 a c) (2 3 b c) (1 2 x y) (1 2 x z) (1 2 y z) (1 3 x y) (1 3 x z) (1 3 y z) (2 3 x y) (2 3 x z) (2 3 y z) (1 2 A) (1 3 A) (2 3 A) (a b x y) (a b x z) (a b y z) (a c x y) (a c x z) (a c y z) (b c x y) (b c x z) (b c y z) (a b A) (a c A) (b c A) (x y A) (x z A) (y z A))))))
+
 (define (fixpoint f v)
   (if (equal? (f v) v)
     v
