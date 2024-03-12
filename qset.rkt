@@ -1,6 +1,8 @@
 #lang racket
 ; #lang errortrace racket
 
+; TODO can we analyze the effect of malicious activity by splitting some points into two? Then how do we modify qsets/slices?
+
 (require
   graph ; for computing strongly connected components
   syntax/parse/define
@@ -402,7 +404,8 @@
           #:validators (seteqv n)
           #:inner-qsets (set))))))
 
-(define-struct sym-gen-struct ([sym-map #:mutable])
+; TODO why not replace this with a cachin procedure?
+#;(define-struct sym-gen-struct ([sym-map #:mutable])
   #:property prop:procedure
   (λ (sym-gen q)
     (if (dict-has-key? (sym-gen-struct-sym-map sym-gen) q)
@@ -411,12 +414,14 @@
         [(define sym (gensym))]
         (dict-set! (sym-gen-struct-sym-map sym-gen) q sym)
         sym))))
-(define (make-sym-gen)
+#;(define (make-sym-gen)
   (sym-gen-struct (make-hash)))
 
 (define (flatten-qsets network)
   ; builds a new qset configuration that has quorum-intersection if and only if the original one has it, and where no quorumset has any inner quorum sets.
-  (define sym-gen (make-sym-gen))
+  ; (define sym-gen (make-sym-gen))
+  ; TODO is the following guaranteed to cache stuff? this is crucial for correctness here
+  (define sym-gen (make-caching-proc (λ (_) (gensym "qset-proxy"))))
   ; (define sym-gen (my-sym-gen "flatten-qsets" 0 null))
   (define inner-qsets
     (apply
@@ -448,7 +453,8 @@
 ; collapse some qsets to a single point, e.g. orgs whose validators only ever appear as the same org in other qsets (and whose threshold is > 1/2)
 ; NOTE marginal utility... inner qsets are small
 (define (collapse-qsets network)
-  (define sym-gen (make-sym-gen))
+  ; (define sym-gen (make-sym-gen))
+  (define sym-gen (make-caching-proc (λ (_) (gensym "flattened-qset"))))
   (define qsets ; all the qsets (including inner ones)
     (set-union
       (apply set (dict-values network))
