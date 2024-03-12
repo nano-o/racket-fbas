@@ -105,6 +105,7 @@
         [`(,bop ,subf1 ,subf2) ; binary operation
           (match-define `(,subf1-+ ,sub-constraints1) (3to2 subf1))
           (match-define `(,subf2-+ ,sub-constraints2) (3to2 subf2))
+          ; TODO seems like using the same encoding as for the * bops above would produce smaller formulas
           (define new-constraint
             `(||
                ,@(for*/list ([v1 truth-values]
