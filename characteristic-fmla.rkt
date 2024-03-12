@@ -3,7 +3,8 @@
 
 ; Functions to generate the formula that characterizes the intertwinedness of a qset configuration.
 
-; TODO try with the extremal val fmla
+; TODO try with the extremal val fmla (see 22.4 in the book); but, first naive try was unsound...
+; TODO we need tests with interesting semitopologies; take examples from the book; for this we need to compute char fmlas using slices.
 
 (require
   "qset.rkt"
