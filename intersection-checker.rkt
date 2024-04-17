@@ -7,7 +7,10 @@
   "characteristic-fmla.rkt"
   "stellarbeat.rkt"
   (only-in rosette sat? solution? model)
-  (only-in "qset.rkt" network-intertwined?/incomplete)
+  (only-in "qset.rkt"
+           network-intertwined?/incomplete
+           flatten-qsets
+           qset-network->slices-network)
   racket/cmdline)
 
 (provide
@@ -17,7 +20,8 @@
   (SAT? `(! ,(t-or-b? fmla))))
 
 (define (check-intertwined/sat method network)
-  (define char-fmla (qset-characteristic-fmla network))
+  ; (define char-fmla (qset-characteristic-fmla network))
+  (define char-fmla (characteristic-fmla (qset-network->slices-network (flatten-qsets network))))
   (define sol (method char-fmla))
   (unless (solution? sol) (error "Failed to run the validity check; something's wrong."))
   (if (sat? sol)
@@ -50,6 +54,7 @@
 
 ; a few simple tests
 (module+ test
+  ; TODO a macro like in 3vl-tests.rkt
   (require rackunit "qset.rkt")
   ; (define method check-valid-using-3to2)
   (define method valid/3?)

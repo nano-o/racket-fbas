@@ -1,5 +1,5 @@
-; #lang racket
-#lang errortrace racket
+#lang racket
+; #lang errortrace racket
 
 ; Functions to generate the formula that characterizes the intertwinedness of a qset configuration.
 
@@ -11,16 +11,37 @@
   (only-in sugar ->string))
 
 (provide
+  characteristic-fmla
   qset-characteristic-fmla)
 
-; creates a datum representing the formula
+(define (characteristic-fmla network)
+  (define points (dict-keys network))
+  (define symbols-map
+    (for/hash ([p points])
+      ; we create symbols with $ at the beginning to avoid any clash with 3vl value ('t, 'b, and 'f).
+      (values p (string->symbol (string-append "$" (->string p))))))
+  (define (negate p)
+    `(¬ ,p))
+  (define (cax p1 polarity)
+    (define blocked
+      `(∧*
+         ,@(for/list ([s (dict-ref network p1)])
+             `(∨*
+                ,@(for/list ([p2 s])
+                    (polarity (dict-ref symbols-map p2)))))))
+    `(⇒ ,blocked ,(polarity (dict-ref symbols-map p1))))
+  (define closedAx
+    `(∧*
+       ,@(for*/list ([p points] [polarity (list identity negate)])
+           (cax p polarity))))
+  `(⇒ ,closedAx (≡* ,@(dict-values symbols-map))))
+
 ; TODO provide a set of points to check are intertwined; this might not be all points e.g. if some are deemed faulty
 (define (qset-characteristic-fmla network)
   (define points-to-check (dict-keys network))
   ; first flatten the network
   (define flat-network
     (flatten-qsets (collapse-qsets network)))
-    ; (flatten-qsets network))
   (define symbols-map
     (for/hash ([p (dict-keys flat-network)])
       ; we create symbols with $ at the beginning to avoid any clash with 3vl value ('t, 'b, and 'f).
@@ -40,13 +61,8 @@
     `(⇒ ,blocked (∧* ,@(for/list ([p ps]) (polarity (dict-ref symbols-map p))))))
   (define ax
     `(∧*
-       ,@(for/list
+       ,@(for*/list
            ([(q ps) (in-dict (invert-qset-map flat-network))]
-            #:when
-            (not ; skip trivial qsets
-              (and
-                (equal? (qset-validators q) (seteqv (car ps)))
-                (equal? (length ps) 1)))
             [polarity (list identity negate)])
            (closedAx q ps polarity))))
   (define fmla

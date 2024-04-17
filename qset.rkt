@@ -13,7 +13,6 @@
   ; sugar/debug
   "cliques.rkt")
 
-; TODO qset->slices (for flat qsets is enough)
 ; TODO projection onto a set
 ; TODO intersection check and quorum check when all orgs can be collapsed and all validators have qset that's a threshold of orgs (easy in that case...). Also easy to compute resilience bounds. Even whether the network is "resilient".
 ; TODO good-case check: find maximal scc, check closure is whole network; find maximal clique of intertwined members of the scc (with heuristic); if not the whole scc, check closure of the clique is the whole network; if failure we can try another clique (we expect to have a big maximal clique that should be easy to hit).
@@ -39,6 +38,7 @@
   invert-qset-map
   nodes-without-qset
   add-missing-qsets
+  qset-network->slices-network
   network-intertwined?/incomplete)
 
 (module+ test
@@ -220,7 +220,8 @@
 (define (ll->ss ll)
   (list->set (map list->set ll)))
 
-(define (slices qs)
+; computes the set of slices corresponding to a qset
+(define (slices q)
   (define (slices-rec qs)
     (define elem-slices
       (for/list ([e (qset-elements qs)])
@@ -236,9 +237,13 @@
               (for/list ([tuple (apply cartesian-product c)])
                 (apply set-union tuple))))))
   (cond
-    [(qset-empty? qs)
+    [(qset-empty? q)
      (set)]
-    [else (ll->ss (slices-rec qs))]))
+    [else (ll->ss (slices-rec q))]))
+
+(define (qset-network->slices-network network)
+  (for/list ([(p q) (in-dict network)])
+    (cons p (slices q))))
 
 (module+ test
   (test-case
@@ -255,6 +260,44 @@
     (check-equal?
       (slices qset-6)
       (ll->ss '((1 2 a b) (1 2 a c) (1 2 b c) (1 3 a b) (1 3 a c) (1 3 b c) (2 3 a b) (2 3 a c) (2 3 b c) (1 2 x y) (1 2 x z) (1 2 y z) (1 3 x y) (1 3 x z) (1 3 y z) (2 3 x y) (2 3 x z) (2 3 y z) (1 2 A) (1 3 A) (2 3 A) (a b x y) (a b x z) (a b y z) (a c x y) (a c x z) (a c y z) (b c x y) (b c x z) (b c y z) (a b A) (a c A) (b c A) (x y A) (x z A) (y z A))))))
+
+; given a set of quorums, assigns to each point the set of quorums that contain it
+(define (quorums->slices qs)
+  (define ps
+    (apply set-union (cons (set) (set->list qs))))
+  (define (slices-of p)
+    (for/set ([q qs] #:when (set-member? q p))
+      q))
+  (for/list ([p ps])
+    (cons p (slices-of p))))
+
+(module+ test
+  (check-equal?
+    (dict-ref (quorums->slices (set (set 1 2) (set 2 3))) 1)
+    (set (set 1 2)))
+  (check-equal?
+    (dict-ref (quorums->slices (set (set 1 2) (set 2 3))) 2)
+    (set (set 1 2) (set 2 3))))
+
+(define (slices->quorumset ss)
+  (define iqs
+    (for/set ([s ss])
+      (qset/kw
+        #:threshold (set-count s)
+        #:validators (apply seteqv (set->list s))
+        #:inner-qsets (set))))
+  (qset/kw
+    #:threshold 1
+    #:validators (seteqv)
+    #:inner-qsets iqs))
+
+(module+ test
+  (check-equal?
+    (slices->quorumset (list (set 1 2) (set 2 3)))
+    (mk-qset
+      #:threshold 1
+      #:validators
+      #:inner-qsets (qset 2 (seteqv 1 2) (set)) (qset 2 (seteqv 2 3) (set)))))
 
 (define (fixpoint f v)
   (if (equal? (f v) v)
@@ -403,19 +446,6 @@
           #:threshold 1
           #:validators (seteqv n)
           #:inner-qsets (set))))))
-
-; TODO why not replace this with a cachin procedure?
-#;(define-struct sym-gen-struct ([sym-map #:mutable])
-  #:property prop:procedure
-  (λ (sym-gen q)
-    (if (dict-has-key? (sym-gen-struct-sym-map sym-gen) q)
-      (dict-ref (sym-gen-struct-sym-map sym-gen) q)
-      (local
-        [(define sym (gensym))]
-        (dict-set! (sym-gen-struct-sym-map sym-gen) q sym)
-        sym))))
-#;(define (make-sym-gen)
-  (sym-gen-struct (make-hash)))
 
 (define (flatten-qsets network)
   ; builds a new qset configuration that has quorum-intersection if and only if the original one has it, and where no quorumset has any inner quorum sets.

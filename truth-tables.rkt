@@ -240,7 +240,6 @@
 
 ;; Evaluator for formulas
 ;; TODO move to separate file?
-
 #;(define (eval/3 env fmla)
   (match fmla
     [`(,uop ,subfmla) ((eval uop) (eval/3 env subfmla))]
