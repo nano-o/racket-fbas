@@ -13,14 +13,14 @@
 ;; We provide a validity checker for tvl formulas.
 
 ; we use 2 bits to represent a tvl value as a bitvector
-; we can think of this as first bit for false and second bit for true
+; we can think of this as most significatn bit for false and least significant bit for true
 (define (bv-to-3 b)
   (cond
     [(bveq b (bv #b01 2)) 't]
-    [(|| (bveq b (bv #b11 2)) (bveq b (bv #b00 2))) 'b]
+    [(|| (bveq b (bv #b11 2)) (bveq b (bv #b00 2))) 'b] ; if both or no bits are set then it's 'b
     [(bveq b (bv #b10 2)) 'f]))
 
-; interprets a formula as a Rosette term
+; define a recursive interpreter:
 (define-syntax-parser make-interpreter
   [(_
      #:name f

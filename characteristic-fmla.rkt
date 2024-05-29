@@ -3,20 +3,20 @@
 
 ; Functions to generate the formula that characterizes the intertwinedness of a qset configuration.
 
-; TODO try with the extremal val fmla (see 22.4 in the book); but, first naive try was unsound...
-; TODO we need tests with interesting semitopologies; take examples from the book; for this we need to compute char fmlas using slices.
-
 (require
   "qset.rkt"
   (only-in sugar ->string))
 
 (provide
   characteristic-fmla
+  extremal-characteristic-fmla
   qset-characteristic-fmla)
 
-(define (characteristic-fmla network)
+(define (characteristic-fmla network [points-to-check (dict-keys network)])
+  ; network maps points to sets of slices
   (define points (dict-keys network))
   (define symbols-map
+    ; associate a symbol to each point
     (for/hash ([p points])
       ; we create symbols with $ at the beginning to avoid any clash with 3vl value ('t, 'b, and 'f).
       (values p (string->symbol (string-append "$" (->string p))))))
@@ -25,16 +25,54 @@
   (define (cax p1 polarity)
     (define blocked
       `(∧*
-         ,@(for/list ([s (dict-ref network p1)])
+         ,@(for/list ([slice (dict-ref network p1)])
              `(∨*
-                ,@(for/list ([p2 s])
+                ,@(for/list ([p2 slice])
                     (polarity (dict-ref symbols-map p2)))))))
     `(⇒ ,blocked ,(polarity (dict-ref symbols-map p1))))
   (define closedAx
     `(∧*
        ,@(for*/list ([p points] [polarity (list identity negate)])
            (cax p polarity))))
-  `(⇒ ,closedAx (≡* ,@(dict-values symbols-map))))
+  `(⇒ ,closedAx (≡* ,@(for/list ([p points-to-check]) (dict-ref symbols-map p)))))
+
+; TODO: factor common stuff
+; TODO: benchmark against non extremal fmla? -> seems counterproductive to increase the size of the formula
+(define (extremal-characteristic-fmla network [points-to-check (dict-keys network)])
+  ; network maps points to sets of slices
+  (define points (dict-keys network))
+  (define symbols-map
+    ; associate a symbol to each point
+    (for/hash ([p points])
+      ; we create symbols with $ at the beginning to avoid any clash with 3vl value ('t, 'b, and 'f).
+      (values p (string->symbol (string-append "$" (->string p))))))
+  (define (negate p)
+    `(¬ ,p))
+  (define (cax p1 polarity)
+    (define blocked
+      `(∧*
+         ,@(for/list ([slice (dict-ref network p1)])
+             `(∨*
+                ,@(for/list ([p2 slice])
+                    (polarity (dict-ref symbols-map p2)))))))
+    `(⇒ ,blocked ,(polarity (dict-ref symbols-map p1))))
+  (define closedAx
+    `(∧*
+       ,@(for*/list ([p points] [polarity (list identity negate)])
+           (cax p polarity))))
+  (define (cax-ex p1 polarity)
+    (define rhs
+      `(∧*
+         ,@(for/list ([slice (dict-ref network p1)])
+             `(∨*
+                ,@(for/list ([p2 slice])
+                    `(□ ,(polarity (dict-ref symbols-map p2))))))))
+    `(⇒ ,(polarity (dict-ref symbols-map p1)) ,rhs))
+  (define closedAx-ex
+    `(∧*
+       ,@(for*/list ([p points] [polarity (list identity negate)])
+           (cax-ex p polarity))))
+  `(⇒ (∧ ,closedAx ,closedAx-ex) (≡* ,@(for/list ([p points-to-check]) (dict-ref symbols-map p)))))
 
 ; TODO provide a set of points to check are intertwined; this might not be all points e.g. if some are deemed faulty
 (define (qset-characteristic-fmla network)
@@ -71,15 +109,24 @@
   fmla)
 
 (module+ test
-  (require rackunit)
+  (require
+    rackunit
+    racket/pretty
+    (only-in "qset.rkt" quorums->slices)
+    (only-in "rosette-sat.rkt" valid/3? SAT?)
+    (only-in "3to2.rkt" t-or-b?)
+    (only-in rosette sat? unsat?)
+    #;(only-in "truth-tables.rkt" for-3values*/and))
 
-  (define network-1
+  (define qset-network-1
     `((p . ,(qset 1 (seteqv 'q) (set)))
       (q . ,(qset 1 (seteqv 'q) (set)))))
+  (define qset-network-1-char-fmla
+    (qset-characteristic-fmla
+      qset-network-1))
 
   (check-equal?
-    (qset-characteristic-fmla
-      network-1)
+    qset-network-1-char-fmla
     '(⇒
        (∧*
          (⇒
@@ -88,4 +135,98 @@
          (⇒
            (∨* (∧* (¬ $q)))
            (∧* (¬ $q) (¬ $p))))
-       (≡* $p $q))))
+       (≡* $p $q)))
+
+  (check-true
+    (unsat? (valid/3? qset-network-1-char-fmla)))
+
+  ; now let's try networks specified by sets of quorums
+
+  (define (solve-network n)
+    (valid/3? (extremal-characteristic-fmla n)))
+  (define slices-network-1
+    (quorums->slices (set (set 'p 'q))))
+  (check-true
+    (unsat? (solve-network slices-network-1)))
+
+  ; examples from the book
+  (define bn-1 ; Figure 2.1
+    (quorums->slices (set (set 0 1) (set 1 2))))
+  (check-true (unsat? (solve-network bn-1)))
+
+  ; Figure 3.1
+  (define bn-2
+    (quorums->slices (set (set 0 1 2) (set 0) (set 2))))
+  (check-true (sat? (solve-network bn-2)))
+  (define bn-3
+    (quorums->slices (set (set 0 1) (set 1 2) (set 0) (set 2))))
+  (check-true (sat? (solve-network bn-3)))
+  (define bn-4
+    (quorums->slices (set (set 0 1 2 3 4) (set 0 1) (set 3 4) (set 1) (set 3))))
+  (check-true (sat? (solve-network bn-4)))
+  (define bn-5
+    (quorums->slices (set (set 0) (set 1) (set 2) (set 0 1 '*) (set 1 2 '*))))
+  (check-true (sat? (solve-network bn-5)))
+  (define bn-6 ; extra test not in Figure 3.1
+    (quorums->slices (set  (set 1)  (set 0 1 '*) (set 1 2 '*))))
+  (check-true (unsat? (solve-network bn-6)))
+
+  ; Figure 3.2
+  (define bn-7
+    (quorums->slices (set  (set 0 1) (set 1 2) (set 2 0))))
+  (check-true (unsat? (solve-network bn-7)))
+  (define bn-8
+    (quorums->slices (set  (set 1) (set 0 1) (set 1 2))))
+  (check-true (unsat? (solve-network bn-8)))
+
+  ; Figure 4.1
+  (define bn-9
+    (quorums->slices (set (set 0 1 3) (set 0 2 4) (set 1 2))))
+  (check-true (unsat? (solve-network bn-9)))
+  (define bn-10
+    (quorums->slices (set (set 0 1 2 3) (set 0 1 2 4) (set 1) (set 2))))
+  (check-true (sat? (solve-network bn-10)))
+
+  ; Figure 5.2
+  (define bn-11
+    (quorums->slices (set (set 0 1) (set 1 2) (set 2 3) (set 3 0))))
+  (check-true (sat? (solve-network bn-11)))
+
+  ; Figure 5.3
+  (define bn-12
+    (quorums->slices (set (set 0) (set 0 1))))
+  (check-true (unsat? (solve-network bn-12)))
+
+  ; Figure 6.1
+  (define bn-13
+    (quorums->slices (set (set 0) (set 0 1) (set 0 1 2 4) (set 1 2 3 4) (set 3 4) (set 4))))
+  (check-true (sat? (solve-network bn-13)))
+
+  ; Figure 6.1
+  (define bn-14
+    (quorums->slices (set (set 1) (set 2) (set '* 2))))
+  (check-true (sat? (solve-network bn-14)))
+  (define bn-15
+    (quorums->slices (set (set 1) (set 2) (set '* 2) (set 3))))
+  (check-true (sat? (solve-network bn-15)))
+
+  ; Figure 9.1
+  (define bn-16
+    (quorums->slices (set (set 0 1) (set 1 2) (set 2 3) (set 3 0))))
+  (check-true (sat? (solve-network (dict-set bn-16 '* (set)))))
+
+  ; Figure 10.1
+  (define bn-17
+    (quorums->slices (set (set 0 1 3) (set 3) (set 0 2 4) (set 4) (set 1 2) (set -1 1 2))))
+  (check-true (sat? (solve-network bn-17)))
+  (define bn-18
+    (quorums->slices (set (set 0 1 3)  (set 0 2 4) (set 4) (set 1 2) (set -1 1 2))))
+  (check-true (sat? (solve-network bn-18)))
+
+  ; Figure 10.2
+  (define bn-19
+    (quorums->slices (set (set 0 1) (set 1 2) (set 2 0) (set 2))))
+  (check-true (sat? (solve-network bn-19)))
+  (define bn-20
+    (quorums->slices (set (set 0 1) (set 1 2) (set 2 3))))
+  (check-true (sat? (solve-network bn-20))))

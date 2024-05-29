@@ -21,7 +21,8 @@
   eval/3 ; evaluate a formula in an environment
   free-vars ; the set of free variables in a formula
   interpretations ; lazy stream of all possible assignements to the provided variables
-  (for-syntax uops))
+  (for-syntax uops)
+  for-3values*/and)
 
 ; NOTE => (defined by rosette) is not ⇒
 ; NOTE <=> (defined by rosette) is not ⇔

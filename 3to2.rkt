@@ -14,7 +14,7 @@
 
  ; given a tvl formula, generates a boolean formula that is valid if and only if the original tvl formula is valid
 
-; The idea is that, for each sub-formula f, we create two boolean variables f- and f+ that encode the tvl truth value of the formula (i.e. 00 is 'f, 01 and 10 is 'b, and 11 is 't). Then we follow the truth tables to express the truth value of a formula in terms of the truth value of its subformulas.
+; The idea is that, for each sub-formula f, we create two boolean variables f- and f+ that encode the tvl truth value of the formula (i.e. 10 is 'f, 00 and 11 are 'b, and 01 is 't). Then we follow the truth tables to express the truth value of a formula in terms of the truth value of its subformulas.
 
 ; We encode 3vl values as pairs of booleans
 (define (is-f p) ; f is 10
@@ -45,6 +45,7 @@
 (define (eval-truth-table op)
   (eval op (module->namespace "truth-tables.rkt")))
 
+; TODO documentation!
 (define/caching (3to2 fmla)
     (define f-+ ; this is a pair of symbols
       (cond

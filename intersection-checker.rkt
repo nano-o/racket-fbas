@@ -21,7 +21,10 @@
 
 (define (check-intertwined/sat method network)
   ; (define char-fmla (qset-characteristic-fmla network))
-  (define char-fmla (characteristic-fmla (qset-network->slices-network (flatten-qsets network))))
+  (define char-fmla
+    (characteristic-fmla
+      (qset-network->slices-network (flatten-qsets network))
+      (dict-keys network)))
   (define sol (method char-fmla))
   (unless (solution? sol) (error "Failed to run the validity check; something's wrong."))
   (if (sat? sol)

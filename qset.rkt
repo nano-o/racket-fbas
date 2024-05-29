@@ -39,7 +39,8 @@
   nodes-without-qset
   add-missing-qsets
   qset-network->slices-network
-  network-intertwined?/incomplete)
+  network-intertwined?/incomplete
+  quorums->slices)
 
 (module+ test
   (require rackunit))
@@ -796,12 +797,12 @@
              [clique (set)]
              #:result clique)
             ([p (shuffle (set->list P))])
-    (define in-clique
+    (define in-clique?
       (for/and ([p2 clique])
         (intertwined?/incomplete (dict-ref network p) (dict-ref network p2))))
     (values
-      (if in-clique rejected (set-add rejected p))
-      (if in-clique (set-add clique p) clique))))
+      (if in-clique? rejected (set-add rejected p))
+      (if in-clique? (set-add clique p) clique))))
 
 ; (module+ test
   ; (random-seed (integer-bytes->integer (crypto-random-bytes 2) #f))
