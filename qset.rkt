@@ -681,13 +681,16 @@
 ;; results are cached (NOTE the cache uses `equal?`)
 ;; TODO make caching proc only when needed
 (define/caching (intertwined?/incomplete q1 q2)
+  (define t1 (qset-threshold q1))
+  (define n1 (set-count (qset-elements q1)))
+  (define t2 (qset-threshold q2))
+  (define n2 (set-count (qset-elements q2)))
   (define inter ; elements that the two qsets have in common
     (set-intersect
       (qset-elements q1) (qset-elements q2)))
+  (define ni (set-count inter))
   (and
-    (> ; t1 + t2 + |intersection| > |q1| + |q2|
-      (+ (qset-threshold q1) (qset-threshold q2) (set-count inter))
-      (+ (set-count (qset-elements q1)) (set-count (qset-elements q2))))
+    (> (+ t1 t2 ni) (+ n1 n2))
     (for/and ([e inter])
       ; common inner qsets must be flat and have a threshold of more than half
       (or
@@ -884,19 +887,29 @@
 ;; q1 and q2 are resiliently-intertwined when they are still intertwined after failures that satisfy both their assumptions
 ;; we assume that, for each inner quorumset, if one member fails maliciously then all do
 (define (resiliently-intertwined/incomplete q1 q2)
-  (define ni ; elements that the two qsets have in common
-    (set-count
-      (set-intersect
-        (qset-validators q1) (qset-validators q2))))
   (define t1 (qset-threshold q1))
-  (define n1 (set-count (qset-validators q1)))
+  (define n1 (set-count (qset-elements q1)))
   (define t2 (qset-threshold q2))
-  (define n2 (set-count (qset-validators q2)))
-  (define m1 (- (+ t1 ni) n1))
-  (define m2 (- (+ t2 ni) n2))
-  (>
-    (- (+ m1 m2) ni)
-    (min (- ni m1) (- ni m2))))
+  (define n2 (set-count (qset-elements q2)))
+  (define inter ; elements that the two qsets have in common
+    (set-intersect
+        (qset-elements q1) (qset-elements q2)))
+  (define ni ; number of elements that the two qsets have in common
+    (set-count inter))
+  (define m1 (- (+ t1 ni) n1)) ; worst-case number of common points used by party 1
+  (define m2 (- (+ t2 ni) n2)) ; worst-csae number of common points used by party 2
+  ; even in the worst case, possible failures cannot affect all common points:
+  (and
+    (>
+      (- (+ m1 m2) ni)
+      (min (- ni m1) (- ni m2)))
+    (for/and ([e inter])
+      ; common inner qsets must be flat and have a threshold of more than half
+      (or
+        (not (qset? e))
+        (and
+          (set-empty? (qset-inner-qsets e))
+          (> (* 2 (qset-threshold e)) (set-count (qset-validators e))))))))
 
 (module+ test
   ; traditional BFT quorum systems:
@@ -926,11 +939,26 @@
     (resiliently-intertwined/incomplete
       (qset 4 (seteqv 'a 'b 'c 'd 'e 'f 'g) (set))
       (qset 4 (seteqv 'a 'b 'c 'd 'e 'f 'g) (set))))
-  (check-false ; a non-symmetric case:
+  ; non-symmetric cases:
+  (check-false
     (resiliently-intertwined/incomplete
       (qset 3 (seteqv 'a 'b 'c 'd) (set))
-      (qset 2 (seteqv 'a 'b 'c 'd) (set)))))
+      (qset 2 (seteqv 'a 'b 'c 'd) (set))))
+  (check-true
+    (resiliently-intertwined/incomplete
+      (qset 5 (seteqv 'a 'b 'c 'd 'e 'f) (set))
+      (qset 3 (seteqv 'a 'b 'c 'd) (set))))
+  ; now with inner qsets
+  (local
+    [(define o1 (qset 2 (seteqv 'o11 'o12 'o13) (set)))
+     (define o2 (qset 2 (seteqv 'o21 'o22 'o23) (set)))
+     (define o3 (qset 2 (seteqv 'o31 'o32 'o33) (set)))
+     (define o4 (qset 2 (seteqv 'o41 'o42 'o43) (set)))
+     (define q1 (qset 3 (seteqv) (set o1 o2 o3 o4)))
+     (define q2 (qset 1 (seteqv) (set o1 o2 o3)))]
+     (check-true ; 3 out of 4
+       (resiliently-intertwined/incomplete q1 q1))
+     (check-false ; 2 out of 3
+       (resiliently-intertwined/incomplete q2 q2))))
 
-; TODO compute failure bounds heuristically?
-
-; TODO compute heuristically whether fbas is resilient; e.g. for every two pairs we can compute a max number of failures; similarly for each point we can compute the min number of points that can block it, then take the min over all nodes as liveness bound
+; TODO compute failure bounds heuristically
