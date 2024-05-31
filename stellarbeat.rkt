@@ -9,16 +9,16 @@
 (provide
   ; get-stellar-top-tier
   (contract-out
-    [get-network-from-file (-> string? stellar-network/c)]
-    [get-stellar-network (-> stellar-network/c)]))
+    [get-fbas-from-file (-> string? stellar-fbas/c)]
+    [get-stellar-fbas (-> stellar-fbas/c)]))
 
-(define/contract (network-info url-string)
+(define/contract (fbas-info url-string)
   (-> string? hash?)
   (define url (string->url url-string))
   (define resp (get-pure-port url #:redirections 5))
   (read-json resp))
 
-(define (get-network-from-file f)
+(define (get-fbas-from-file f)
   ; f must contain an array of nodes
   (define f-contents
     (with-input-from-file f read-json))
@@ -26,11 +26,11 @@
     (if (hash? f-contents)
       (hash-ref f-contents 'nodes)
       f-contents))
-  (define network
+  (define fbas
     (hash->conf (quorum-sets nodes)))
-  (unless (set-empty? (nodes-without-qset network))
-    (println (format "some nodes do not have a qset assigned: ~v" (nodes-without-qset network))))
-  (add-missing-qsets network))
+  (unless (set-empty? (nodes-without-qset fbas))
+    (println (format "some nodes do not have a qset assigned: ~v" (nodes-without-qset fbas))))
+  (add-missing-qsets fbas))
 
 (define (quorum-sets nodes)
   (for/hash
@@ -44,14 +44,14 @@
 (define stellarbeat-url-string
   "https://api.stellarbeat.io/v1")
 
-(define (get-stellar-network)
+(define (get-stellar-fbas)
   (define info
-    (network-info stellarbeat-url-string))
-  (define network
+    (fbas-info stellarbeat-url-string))
+  (define fbas
     (hash->conf (quorum-sets (hash-ref info 'nodes))))
-  (unless (set-empty? (nodes-without-qset network))
-    (println (format "some nodes do not have a qset assigned: ~v" (nodes-without-qset network))))
-  (add-missing-qsets network))
+  (unless (set-empty? (nodes-without-qset fbas))
+    (println (format "some nodes do not have a qset assigned: ~v" (nodes-without-qset fbas))))
+  (add-missing-qsets fbas))
 
 (define (hash->qset h)
   (qset/kw
@@ -86,7 +86,7 @@
 
 (define (get-stellar-top-tier-qsets)
   (define info
-    (network-info stellarbeat-url-string))
+    (fbas-info stellarbeat-url-string))
   (define nodes (quorum-sets (hash-ref info 'nodes)))
   (define current-top-tier-org-names
   '("Stellar Development Foundation" "Public Node" "Whalestack LLC" "SatoshiPay" "LOBSTR" "Blockdaemon Inc." "Franklin Templeton"))
@@ -111,7 +111,7 @@
 (module+ test
   (require rackunit)
 
-  (check-not-exn get-stellar-network)
+  (check-not-exn get-stellar-fbas)
   (check-not-exn get-stellar-top-tier)
 
   #;(test-case

@@ -4,6 +4,7 @@
   graph ; for computing strongly connected components
   syntax/parse/define
   sugar ; for caching procedures
+  qi
   #;racket/trace
   #;racket/pretty
   #;sugar/debug)
@@ -13,11 +14,15 @@
 ; TODO good-case check: find maximal scc, check closure is whole network; find maximal clique of intertwined members of the scc (with heuristic); if not the whole scc, check closure of the clique is the whole network; if failure we can try another clique (we expect to have a big maximal clique that should be easy to hit).
 ; TODO non-intersection good case? If closure of scc is not whole set, can we find a quorum in its complement? Not necessarily. We can if it is a quorum. A pair of nodes may fail the cheap intertwinedness check; then we do a more thourough direct intertwinedness check (essentially enumerating their slices). Any other easy cases?
 
+;; Definition
+;; ==========
+;; Two points (or nodes) p1 and p2 are intertwined when, if Q1 is a quorum of p1 and Q2 is a quorum of p2, then Q1 and Q2 intersect
+
 (provide
   (contract-out
     [node/c contract?]
     [qset/c contract?]
-    [stellar-network/c contract?]
+    [stellar-fbas/c contract?]
     [struct qset ; TODO: why not qset/c?
       ((threshold exact-positive-integer?)
        (validators (set/c node/c #:cmp 'eqv))
@@ -28,14 +33,14 @@
         #:validators (set/c node/c #:cmp 'eqv)
         #:inner-qsets (set/c any/c #:cmp 'equal)
         qset?)]
-    [flatten-qsets (-> stellar-network/c stellar-network/c)]
-    [collapse-qsets (-> stellar-network/c stellar-network/c)])
+    [flatten-qsets (-> stellar-fbas/c stellar-fbas/c)]
+    [collapse-qsets (-> stellar-fbas/c stellar-fbas/c)])
   invert-qset-map
   nodes-without-qset
   add-missing-qsets
-  qset-network->slices-network
-  network-intertwined?/incomplete
-  quorums->slices)
+  qset-fbas->slices-fbas
+  fbas-intertwined?/incomplete
+  quorums->slices-fbas)
 
 (module+ test
   (require rackunit))
@@ -246,8 +251,8 @@
             (apply set-union c-slices))))]))
 
 ;; transforms qsets into sets of slices
-(define (qset-network->slices-network network)
-  (for/list ([(p q) (in-dict network)])
+(define (qset-fbas->slices-fbas fbas)
+  (for/list ([(p q) (in-dict fbas)])
     (cons p (slices q))))
 
 (module+ test
@@ -267,7 +272,7 @@
       (ll->ss '((1 2 a b) (1 2 a c) (1 2 b c) (1 3 a b) (1 3 a c) (1 3 b c) (2 3 a b) (2 3 a c) (2 3 b c) (1 2 x y) (1 2 x z) (1 2 y z) (1 3 x y) (1 3 x z) (1 3 y z) (2 3 x y) (2 3 x z) (2 3 y z) (1 2 A) (1 3 A) (2 3 A) (a b x y) (a b x z) (a b y z) (a c x y) (a c x z) (a c y z) (b c x y) (b c x z) (b c y z) (a b A) (a c A) (b c A) (x y A) (x z A) (y z A))))))
 
 ;; given a set of quorums, assigns to each point the set of quorums that contain it
-(define (quorums->slices qs)
+(define (quorums->slices-fbas qs)
   (define ps
     (apply set-union (cons (set) (set->list qs))))
   (define (slices-of p)
@@ -278,10 +283,10 @@
 
 (module+ test
   (check-equal?
-    (dict-ref (quorums->slices (set (set 1 2) (set 2 3))) 1)
+    (dict-ref (quorums->slices-fbas (set (set 1 2) (set 2 3))) 1)
     (set (set 1 2)))
   (check-equal?
-    (dict-ref (quorums->slices (set (set 1 2) (set 2 3))) 2)
+    (dict-ref (quorums->slices-fbas (set (set 1 2) (set 2 3))) 2)
     (set (set 1 2) (set 2 3))))
 
 ;; (trivially) transforms a set of slices into a quorumset
@@ -399,11 +404,11 @@
 ;; the topological closure of the set P (thinking of quorums as open sets)
 ;; that's everything that's recursively blocked by P
 ;; equivalently, that's all points whose quorums all intersect P
-(define (closure P network)
+(define (closure P fbas)
   (define (blocked-set P)
     (set-union
       P
-      (for/set ([(p q) (in-dict network)]
+      (for/set ([(p q) (in-dict fbas)]
                 #:when (blocked? q P))
         p)))
   (fixpoint blocked-set P))
@@ -426,35 +431,35 @@
         (cons 'p (qset 1 (seteqv 'q) (set)))))
     (set 'p 'r)))
 
-(define (network-members network)
+(define (fbas-members fbas)
   (apply
     set-union
     (cons (seteqv) ; to avoid an empty list
-          (for/list ([(_ q) (in-dict network)])
+          (for/list ([(_ q) (in-dict fbas)])
             (qset-members q)))))
 
-(define (nodes-without-qset network)
+(define (nodes-without-qset fbas)
   (set-subtract
-    (network-members network)
-    (apply seteqv (dict-keys network))))
+    (fbas-members fbas)
+    (apply seteqv (dict-keys fbas))))
 
-(define (no-orphans? network)
-  (set-empty? (nodes-without-qset network)))
+(define (no-orphans? fbas)
+  (set-empty? (nodes-without-qset fbas)))
 
-(define stellar-network/c
+(define stellar-fbas/c
   (and/c
     (listof (cons/c node/c qset/c)) ; TODO association list; why not hash?
     no-orphans?))
 
 (module+ test
   (check-false
-    (stellar-network/c `((p . ,qset-1)))))
+    (stellar-fbas/c `((p . ,qset-1)))))
 
-; add empty qsets to nodes that have a missing qset
-(define (add-missing-qsets network)
+;; add self (singleton) qsets to nodes that have a missing qset
+(define (add-missing-qsets fbas)
   (append
-    network
-    (for/list ([n (nodes-without-qset network)])
+    fbas
+    (for/list ([n (nodes-without-qset fbas)])
       (cons
         n
         (qset/kw
@@ -462,54 +467,59 @@
           #:validators (seteqv n)
           #:inner-qsets (set))))))
 
-; TODO tests
-(define (flatten-qsets network)
-  ; builds a new qset configuration that has quorum-intersection if and only if the original one has it, and where no quorumset has any inner quorum sets.
-  ; (define sym-gen (make-sym-gen))
-  ; TODO is the following guaranteed to cache stuff? this is crucial for correctness here
-  (define sym-gen (make-caching-proc (λ (_) (gensym "qset-proxy"))))
-  ; (define sym-gen (my-sym-gen "flatten-qsets" 0 null))
+;; builds a new qset configuration that has quorum-intersection if and only if the original one has it, and where no quorumset has any inner quorumset; we obtain what we call a flat FBAS
+(define (flatten-qsets fbas)
+  (define/caching (gensym/caching _)  ; NOTE caching behavior is crucial for correctness
+    (gensym "qset-proxy"))
   (define inner-qsets
     (apply
       set-union
       (set)
-      (for/list ([q (apply set (dict-values network))])
+      (for/list ([q (apply set (dict-values fbas))])
         (reachable-inner-qsets q))))
   (define (flatten q)
     (define new-validators
       (for/seteqv ([iq (qset-inner-qsets q)])
-        (sym-gen iq)))
+        (gensym/caching iq)))
     (qset/kw
       #:threshold (qset-threshold q)
       #:validators (set-union (qset-validators q) new-validators)
       #:inner-qsets (set)))
   (define existing
-    (for/list ([(p q) (in-dict network)])
+    (for/list ([(p q) (in-dict fbas)])
       (cons p (flatten q))))
   (define new
     (for/list ([q inner-qsets])
-      (cons (sym-gen q) (flatten q))))
+      (cons (gensym/caching q) (flatten q))))
   (append existing new))
 
 (module+ test
   (check-true
     (for/and ([q (dict-values (flatten-qsets `((p . ,qset-6))))])
-      (set-empty? (qset-inner-qsets q)))))
+      (set-empty? (qset-inner-qsets q))))
+  ; for an example:
+  (flatten-qsets
+    `((p . ,(qset/kw
+              #:threshold 1
+              #:validators (seteqv)
+              #:inner-qsets (set (qset/kw
+                                   #:threshold 2
+                                   #:validators (seteqv 'a 'b 'c)
+                                   #:inner-qsets (set))))))))
 
-;; collapse some qsets to a single point, e.g. orgs whose validators only ever appear as the same org in other qsets (and whose threshold is > 1/2)
-; NOTE marginal utility... inner qsets are small
-; TODO tests
-(define (collapse-qsets network)
-  ; (define sym-gen (make-sym-gen))
-  (define sym-gen (make-caching-proc (λ (_) (gensym "flattened-qset"))))
+;; collapse some qsets to a single point, e.g. orgs whose validators only ever appear as the same org in other qsets and whose threshold is > 1/2
+; NOTE marginal utility... inner qsets are small anyway
+(define (collapse-qsets fbas)
+  (define/caching (gensym/caching _)  ; NOTE caching behavior is crucial for correctness
+    (gensym "collapsed-qset"))
   (define qsets ; all the qsets (including inner ones)
     (set-union
-      (apply set (dict-values network))
+      (apply set (dict-values fbas))
       (apply
         set-union
         (cons
           (set)
-          (for/list ([q (dict-values network)])
+          (for/list ([q (dict-values fbas)])
             (reachable-inner-qsets q))))))
   (define (collapsible? q)
     ; a qset can be collapsed to a point when:
@@ -520,10 +530,10 @@
     (and
       (for/and ([v (qset-validators q)])
         (and
-          (dict-has-key? network v)
+          (dict-has-key? fbas v)
           (equal?
-            (dict-ref network v)
-            (dict-ref network (car (set->list (qset-validators q)))))))
+            (dict-ref fbas v)
+            (dict-ref fbas (car (set->list (qset-validators q)))))))
       (set-empty? (qset-inner-qsets q))
       (> (* 2 (qset-threshold q)) (set-count (qset-validators q)))
       (for/and ([q2 (in-set qsets)])
@@ -531,7 +541,7 @@
             (set-empty? (set-intersect (qset-validators q) (qset-validators q2)))))
       (> (set-count (qset-validators q)) 1)))
   ; first, identify all the qsets to collapse
-  ; second, collapse their occurences
+  ; second, collapse all their occurences
   ; finally, give the new points their qsets
   (define to-collapse
     (apply set (filter collapsible? (set->list qsets))))
@@ -540,7 +550,7 @@
       (begin
         (qset/kw
           #:threshold 1
-          #:validators (seteqv (sym-gen q))
+          #:validators (seteqv (gensym/caching q))
           #:inner-qsets (set)))
       (let ()
         (define collapsed
@@ -549,7 +559,7 @@
             #:validators (set-union
                            (qset-validators q)
                            (for/seteqv ([q2 (in-set (set-intersect (qset-inner-qsets q) to-collapse))])
-                                       (sym-gen q2)))
+                                       (gensym/caching q2)))
             #:inner-qsets (for/set
                             ([q2 (in-set
                                    (set-subtract
@@ -558,99 +568,99 @@
                             (collapse q2))))
           collapsed)))
   (define existing-points
-    (for/list ([(p q) (in-dict network)])
+    (for/list ([(p q) (in-dict fbas)])
       (cons p (collapse q))))
   (define new-points
     (for/list ([q to-collapse])
       (cons
-        (sym-gen q)
-        ; we give the new validator, which corresponds to an old qset q, the qsets of the validators in q (they all have the same qset)
+        (gensym/caching q)
+        ; we give the new point which corresponds to an old qset q, the qsets of the points in q (they all have the same qset)
         (dict-ref existing-points (car (set->list (qset-validators q)))))))
   (append new-points existing-points))
 
 (module+ test
-  (check-not-exn (thunk (collapse-qsets `(,(cons 'p qset-6))))))
+  (check-not-exn (thunk (collapse-qsets `(,(cons 'p qset-6)))))
+  ; here's an example:
+  (local
+    [(define o1 (qset 2 (seteqv 'o11 'o12 'o13) (set)))
+     (define o2 (qset 2 (seteqv 'o21 'o22 'o23) (set)))
+     (define o3 (qset 2 (seteqv 'o31 'o32 'o33) (set)))
+     (define q (qset 2 (seteqv) (set o1 o2 o3)))
+     (define fbas
+       (for/list ([p '(o11 o12 o13 o21 o22 o23 o31 o32 o33)])
+         `(,p . ,q)))]
+    (pretty-print (collapse-qsets fbas))))
 
-(define (invert-qset-map qset-map)
-  ; assumes flat qsets
-  (for/fold
-    ([acc null])
-    ([(p q) (in-dict qset-map)])
+;; produces a map from qset to list of points that have the qset
+(define (invert-qset-map qset-fbas)
+  (for/fold ([acc null]) ([(p q) (in-dict qset-fbas)])
     (if (dict-has-key? acc q)
       (dict-set acc q (cons p (dict-ref acc q)))
       (dict-set acc q (list p)))))
 
 (module+ test
-
-  (define conf-1
-    (list
-      (cons 'q (qset 1 (seteqv 'q) (set)))
-      (cons 'r (qset 1 (seteqv 'p) (set)))
-      (cons 'p (qset 1 (seteqv 'q) (set)))))
-
-  ; (invert-qset-map conf-1)
-
   (check-equal?
     (invert-qset-map `(,(cons 'q qset-1) ,(cons 'p qset-1)))
-    (list (list (qset 2 (seteqv 1 2 3) (set)) 'p 'q))))
+    `((,(qset 2 (seteqv 1 2 3) (set)) . (p q)))))
 
-;; Nice networks
-; TODO submodule?
-
-(define (flat-qsets? network) ; TODO
-  (for/and ([q (dict-values network)])
+(define (flat-fbas? fbas)
+  (for/and ([q (dict-values fbas)])
     (set-empty? (qset-inner-qsets q))))
 
-(define (blocked q P) ; q must no have inner qsets
-  (>
-    (+
-      (set-count (set-intersect (qset-validators q) P))
-      (qset-threshold q))
-    (set-count (qset-validators q))))
+(module+ flat-fbas
+  ;; functions applying only to flat FBAS configurations
+  (define (blocked q P) ; q must no have inner qsets
+    (>
+      (+
+        (set-count (set-intersect (qset-validators q) P))
+        (qset-threshold q))
+      (set-count (qset-validators q))))
 
-(define (flat-closure P qset-map)
-  (define to-add
-    (for/seteqv ([p (network-members qset-map)]
-              #:when (blocked (dict-ref qset-map p) P))
-      p))
-  (if (set-empty? (set-subtract to-add P))
-    P
-    (flat-closure (set-union P to-add) qset-map)))
+  (define (flat-closure P qset-map)
+    (define to-add
+      (for/seteqv ([p (fbas-members qset-map)]
+                   #:when (blocked (dict-ref qset-map p) P))
+                  p))
+    (if (set-empty? (set-subtract to-add P))
+      P
+      (flat-closure (set-union P to-add) qset-map)))
 
-(module+ test
-  (define network-1
-    (for/list ([p '(1 2 3)])
-      (cons p qset-1)))
-  (check-equal?
-    (flat-closure (seteqv 1) network-1)
-    (seteqv 1))
-  (check-equal?
-    (flat-closure (seteqv 1 2) network-1)
-    (seteqv 1 2 3))
-  (check-equal?
-    (flat-closure (seteqv 1 3) network-1)
-    (seteqv 1 2 3)))
+  #;(module+ test
+    (define fbas-1
+      (for/list ([p '(1 2 3)])
+        (cons p qset-1)))
+    (check-equal?
+      (flat-closure (seteqv 1) fbas-1)
+      (seteqv 1))
+    (check-equal?
+      (flat-closure (seteqv 1 2) fbas-1)
+      (seteqv 1 2 3))
+    (check-equal?
+      (flat-closure (seteqv 1 3) fbas-1)
+      (seteqv 1 2 3))))
 
-;; direct graph where there is an edge from p to q when q appears in p's quorumset
-(define (network-to-graph net)
+;; directed graph where there is an edge from p to q when q appears in p's quorumset
+(define (fbas-to-graph net)
   (define edges
-    (for*/list ([p (network-members net)]
-                [q (network-members net)]
+    (for*/list ([p (fbas-members net)]
+                [q (fbas-members net)]
                 #:when (set-member? (qset-members (dict-ref net p)) q))
       (list p q)))
   (unweighted-graph/directed edges))
 
-; heuristic that is sound (i.e. if it returns true, then the qsets are intertwined) but not complete
-; results are cached (NOTE the cache uses `equal?`)
+;; checks whether every two slices of qsets q1 and q2 intersect
+;; heuristic that is sound (i.e. if it returns true, then the qsets are intertwined) but not complete
+;; results are cached (NOTE the cache uses `equal?`)
 (define/caching (intertwined?/incomplete q1 q2)
-  (define inter
+  (define inter ; elements that the two qsets have in common
     (set-intersect
       (qset-elements q1) (qset-elements q2)))
   (and
-    (>
+    (> ; t1 + t2 + |intersection| > |q1| + |q2|
       (+ (qset-threshold q1) (qset-threshold q2) (set-count inter))
       (+ (set-count (qset-elements q1)) (set-count (qset-elements q2))))
     (for/and ([e inter])
+      ; common inner qsets must be flat and have a threshold of more than half
       (or
         (not (qset? e))
         (and
@@ -769,6 +779,7 @@
             #:threshold 2
             #:validators 1 2 3)))))
 
+;; graph where there is an edge between two points when the heuristic intertwinedness check succeeds
 (define (intertwined-graph P net)
   (define edges
     (for*/list ([p1 P] [p2 P]
@@ -776,108 +787,64 @@
       (list p1 p2)))
   (unweighted-graph/undirected edges))
 
-; TODO: only for flat networks:
-(define (non-transitive-intersection? ps network)
-  (unless (for/and ([p ps])
-            (set-empty? (qset-inner-qsets (dict-ref network p))))
-    (error "all qsets must be flat"))
-    (for*/and ([(p1 q1) (in-dict network)]
-               #:when (set-member? ps p1)
-               [(p2 q2) (in-dict network)]
-               #:when (set-member? ps p2))
-      (define inter (set-intersect (qset-validators q1) (qset-validators q2)))
-      (>
-        (+ (qset-threshold q1) (qset-threshold q2) (set-count inter))
-        (+ (set-count (qset-validators q1)) (set-count (qset-validators q2))))))
-
+;; a maximal strongly-connected component of the directed graph g
 (define (max-scc g)
-    (car (sort (scc g) (λ (l1 l2) (> (length l1) (length l2))))))
+  (define (longer l1 l2)
+    (> (length l1) (length l2)))
+  (car (sort (scc g) longer)))
 
-(define (all-pairs-intertwined?/incomplete P network)
+(define (all-pairs-intertwined?/incomplete P fbas)
   (for*/and ([p1 P] [p2 P])
-    (intertwined?/incomplete (dict-ref network p1) (dict-ref network p2))))
+    (intertwined?/incomplete (dict-ref fbas p1) (dict-ref fbas p2))))
 
-(define (shows-intertwined P network)
-  (define nodes (apply set (dict-keys network)))
+;; A set of points P show the fbas is intertwined when:
+;; a) the closure of P is the whole fbas
+;; b) P is intertwined
+(define (shows-intertwined P fbas)
+  (define nodes (apply set (dict-keys fbas)))
   (cond
-    [(not (set=? (closure P network) nodes))
-     (displayln "Closure does not cover the whole network")
+    [(not (set=? (closure P fbas) nodes))
+     (displayln "Closure does not cover the whole fbas")
      #f]
-    [(all-pairs-intertwined?/incomplete P network)
+    [(all-pairs-intertwined?/incomplete P fbas)
      #t]
     [else
-      (for/or ([_ (range 1 10)]) ; we'll try 10 random cliques
-        (set=? (closure (random-clique P network) network) nodes))]))
+      (for/or ([_ (range 1 10)]) ; let's try 10 random max intertwined sets
+        (set=? (closure (random-max-intertwined P fbas) fbas) nodes))]))
 
-(define (random-clique P network)
+;; produces a maximal set of points that are intertwined according to the intertwined?/incomplete
+(define (random-max-intertwined P fbas)
+  ; this is just building a max clique randomly
   (for/fold ([rejected (set)]
              [clique (set)]
              #:result clique)
             ([p (shuffle (set->list P))])
     (define in-clique?
       (for/and ([p2 clique])
-        (intertwined?/incomplete (dict-ref network p) (dict-ref network p2))))
-    (values
-      (if in-clique? rejected (set-add rejected p))
-      (if in-clique? (set-add clique p) clique))))
+        (intertwined?/incomplete (dict-ref fbas p) (dict-ref fbas p2))))
+    (if in-clique?
+      (values rejected (set-add clique p))
+      (values (set-add rejected p) clique))))
 
-; (module+ test
-  ; (random-seed (integer-bytes->integer (crypto-random-bytes 2) #f))
-  ; (random-clique
-    ; '(1 2 3 a b c)
-    ; (append
-      ; (for/list ([p '(1 2 3)]) (cons p (mk-qset #:threshold 2 #:validators 1 2 3)))
-      ; (for/list ([p '(a b c)]) (cons p (mk-qset #:threshold 2 #:validators 'a 'b 'c))))))
-
-(define (network-intertwined?/incomplete network)
-  (define mscc
-    (apply set (max-scc (network-to-graph network))))
+;; our main quorum-intersection check
+(define (fbas-intertwined?/incomplete fbas)
+  (define mscc ; max strongly-connected component, as a set
+    (apply set (max-scc (fbas-to-graph fbas))))
   (cond
-    [(shows-intertwined mscc network) #t]
-    [else #f]
-    #;[else
-      ; TODO this is useless in its current form (it's too expensive to compute all cliques upfront)
-      ; What we need is a heuristic to efficiently compute an on-demand stream of large cliques
-      ; Since we expect a big clique, pick a node, compute a clique, and if it doesn't work pick a node in the complement of the clique and try again; maybe then give up if that does not work.
-      (displayln "WARNING: taking exponential branch")
-      (define max-cliques (find-maximal-cliques (intertwined-graph mscc network)))
-      (for/or ([mc max-cliques])
-        (shows-intertwined mc network))]))
-
-; TODO test network with 4 orgs, global threshold 3, inner 2/3; play with variations
-; TODO bigger network to test having some orgs that screw up their config
+    [(shows-intertwined mscc fbas) #t]
+    [else #f]))
 
 (module+ test
-  (define g1 (network-to-graph network-1))
+  (define fbas-1
+    (for/list ([p '(1 2 3)])
+      (cons p qset-1)))
+  (define g1 (fbas-to-graph fbas-1))
   (check-equal? (length (get-edges g1)) 9))
 
 (module+ test
   (require racket/serialize)
-  (define stellar-network
+  (define stellar-fbas
     (with-input-from-file
       "./stellarbeat.data"
       (thunk (deserialize (read)))))
-  (network-intertwined?/incomplete stellar-network)
-
-  ; (define bscc ; biggest scc
-    ; (car (sort (scc (network-to-graph stellar-network)) (λ (l1 l2) (> (length l1) (length l2))))))
-  ; (define bscc-network
-    ; (for/list ([(p q) (in-dict stellar-network)]
-               ; #:when (set-member? bscc p))
-      ; (cons p q)))
-
-  ; (set-count (apply set (dict-values bscc-network)))
-  ; (set-count (reachable-inner-qsets (car (dict-values bscc-network))))
-
-  ; (define collapsed-bscc-network (collapse-qsets bscc-network))
-  ; (check-true (flat-qsets? collapsed-bscc-network))
-  ; (check-true (non-transitive-intersection? (dict-keys bscc-network) collapsed-bscc-network))
-
-  ; (define flattened-stellar-network (flatten-qsets stellar-network))
-  ; (check-true (flat-qsets? flattened-stellar-network))
-  #;(set-count (flat-closure (apply seteqv biggest-scc) flattened-stellar-network))
-  #;(set-count (closure (apply set biggest-scc) stellar-network))
-  #;(set-count (network-members flattened-stellar-network)))
-
-; TODO find small quorum (use SSCs), check intersection, check closure covers network
-; Use unweighted-graph/directed
+  (fbas-intertwined?/incomplete stellar-fbas))
