@@ -1,17 +1,12 @@
 #lang racket
-; #lang errortrace racket
-
-; TODO can we analyze the effect of malicious activity by splitting some points into two? Then how do we modify qsets/slices?
 
 (require
   graph ; for computing strongly connected components
   syntax/parse/define
-  sugar
-  racket/random
-  ; racket/trace
-  ; racket/pretty
-  ; sugar/debug
-  "cliques.rkt")
+  sugar ; for caching procedures
+  #;racket/trace
+  #;racket/pretty
+  #;sugar/debug)
 
 ; TODO projection onto a set
 ; TODO intersection check and quorum check when all orgs can be collapsed and all validators have qset that's a threshold of orgs (easy in that case...). Also easy to compute resilience bounds. Even whether the network is "resilient".
@@ -45,6 +40,8 @@
 (module+ test
   (require rackunit))
 
+; we have a set of nodes, also called points
+
 ; a node is something for which eqv? is semantic equivalence, i.e. symbols, numbers, and characters.
 (define node/c
   (or/c symbol? number? char?))
@@ -52,7 +49,8 @@
 ; validators must be a seteqv
 ; inner-qsets must be a set
 ; TODO why not just an assoc list?
-(define-struct qset (threshold validators inner-qsets) #:prefab) ; prefab to simplify serialization/deserialization
+(struct qset (threshold validators inner-qsets) #:prefab) ; prefab to simplify serialization/deserialization
+; note that this is an immutable struct so we cannot construct circular ones
 
 ; contract for qsets
 (define qset/c
@@ -67,6 +65,8 @@
   (qset t vs iqs))
 
 (define-syntax-parser mk-qset ; TOTO simplify this
+  ; TODO must check that we are not passed sets as elements (confusing with qset/kw...)
+  ; but we can't really know before evaluation
   [(_ t (v ...) (iq ...)) #'(qset t (seteqv v ...) (set iq ...))]
   [(_ #:threshold t #:validators v ... #:inner-qsets iq ...)
    #'(qset t (seteqv v ...) (set iq ...))]
@@ -119,6 +119,7 @@
           qset-3
           (qset/kw #:threshold 2 #:validators (seteqv 2 1 3 1) #:inner-qsets (set)))))))
 
+;; returns the set of elements (validators and inner qsets) of q
 (define (qset-elements q)
   (set-union
     (apply set (set->list (qset-validators q))) ; just because qset-validators is a seteqv...
@@ -216,32 +217,35 @@
       (qset 2 (seteqv 'c 'b 'a) (set)))))
 
 (define (qset-empty? qs)
-  (empty? (qset-elements qs)))
+  (set-empty? (qset-elements qs)))
 
+;; list of lists to set of sets
 (define (ll->ss ll)
   (list->set (map list->set ll)))
 
-; computes the set of slices corresponding to a qset
-(define (slices q)
-  (define (slices-rec qs)
-    (define elem-slices
-      (for/list ([e (qset-elements qs)])
-        (cond
-          [(qset? e) (slices-rec e)]
-          [else (list (list e))])))
-    (define cs
-      (combinations elem-slices (qset-threshold qs)))
-    (apply
-      set-union
-      (cons null ; set-union fails with no arguments
-            (for/list ([c cs])
-              (for/list ([tuple (apply cartesian-product c)])
-                (apply set-union tuple))))))
-  (cond
-    [(qset-empty? q)
-     (set)]
-    [else (ll->ss (slices-rec q))]))
+;; set of sets to list of lists
+(define (ss->ll ss)
+  (set->list (map set->list ss)))
 
+;; computes the set of slices corresponding to a qset
+;; returns a set of sets
+(define (slices q)
+  (cond
+    [(qset-empty? q) (set)]
+    [else
+      ; recall that the elements of a qset are its validators and immediate inner qsets
+      ; each of those elements corresponds to a set of slices:
+      (define/caching (elem-slices e)
+        (cond
+          [(qset? e) (slices e)]
+          [else (set (set e))]))
+      ; now we obtain each slice of q by picking a number (qset-threshold q) of elements of q and picking one slice of each element
+      (apply set-union
+        (for/list ([c (combinations (set->list (qset-elements q)) (qset-threshold q))])
+          (for/set ([c-slices (apply cartesian-product (ss->ll (map elem-slices c)))])
+            (apply set-union c-slices))))]))
+
+;; transforms qsets into sets of slices
 (define (qset-network->slices-network network)
   (for/list ([(p q) (in-dict network)])
     (cons p (slices q))))
@@ -262,7 +266,7 @@
       (slices qset-6)
       (ll->ss '((1 2 a b) (1 2 a c) (1 2 b c) (1 3 a b) (1 3 a c) (1 3 b c) (2 3 a b) (2 3 a c) (2 3 b c) (1 2 x y) (1 2 x z) (1 2 y z) (1 3 x y) (1 3 x z) (1 3 y z) (2 3 x y) (2 3 x z) (2 3 y z) (1 2 A) (1 3 A) (2 3 A) (a b x y) (a b x z) (a b y z) (a c x y) (a c x z) (a c y z) (b c x y) (b c x z) (b c y z) (a b A) (a c A) (b c A) (x y A) (x z A) (y z A))))))
 
-; given a set of quorums, assigns to each point the set of quorums that contain it
+;; given a set of quorums, assigns to each point the set of quorums that contain it
 (define (quorums->slices qs)
   (define ps
     (apply set-union (cons (set) (set->list qs))))
@@ -280,6 +284,7 @@
     (dict-ref (quorums->slices (set (set 1 2) (set 2 3))) 2)
     (set (set 1 2) (set 2 3))))
 
+;; (trivially) transforms a set of slices into a quorumset
 (define (slices->quorumset ss)
   (define iqs
     (for/set ([s ss])
@@ -300,6 +305,7 @@
       #:validators
       #:inner-qsets (qset 2 (seteqv 1 2) (set)) (qset 2 (seteqv 2 3) (set)))))
 
+;; recursively apply f until a fixpoint is reached, starting with (f v)
 (define (fixpoint f v)
   (if (equal? (f v) v)
     v
@@ -309,21 +315,26 @@
   (define (f v) (if (< v 42) (+ 1 v) v))
   (check-equal? (fixpoint f 0) 42))
 
+;; whether the set P intersects all slices of the qset q
 (define (blocked? q P)
-  (define (directly-blocked q blocked-set)
+  ; we first mark every inner quorumset iq which has at least (qset-threshold iq) validators in P
+  ; then we mark every inner quorumset iq which has at least (qset-threshold iq) elements in P or marked already
+  ; etc. until a fixpoint
+  ; now if q has been marked then it's blocked (return #t) and otherwise not (return #f)
+  (define (mark? q marked)
     (>
       (+
-        (set-count (set-intersect (qset-elements q) blocked-set))
+        (set-count (set-intersect (qset-elements q) marked))
         (qset-threshold q))
       (set-count (qset-elements q))))
   (define qs
     (set-union (set q) (reachable-inner-qsets q)))
-  (define (compute-blocked blocked-set)
+  (define (new-marked marked)
     (set-union
-      blocked-set
-      (for/set ([q qs] #:when (directly-blocked q blocked-set))
+      marked
+      (for/set ([q qs] #:when (mark? q marked))
         q)))
-  (set-member? (fixpoint compute-blocked P) q))
+  (set-member? (fixpoint new-marked P) q))
 
 (module+ test
   (check-true
@@ -385,6 +396,9 @@
                 (set))))))
       (set 'u 2 'b 'c))))
 
+;; the topological closure of the set P (thinking of quorums as open sets)
+;; that's everything that's recursively blocked by P
+;; equivalently, that's all points whose quorums all intersect P
 (define (closure P network)
   (define (blocked-set P)
     (set-union
@@ -448,6 +462,7 @@
           #:validators (seteqv n)
           #:inner-qsets (set))))))
 
+; TODO tests
 (define (flatten-qsets network)
   ; builds a new qset configuration that has quorum-intersection if and only if the original one has it, and where no quorumset has any inner quorum sets.
   ; (define sym-gen (make-sym-gen))
@@ -481,8 +496,9 @@
     (for/and ([q (dict-values (flatten-qsets `((p . ,qset-6))))])
       (set-empty? (qset-inner-qsets q)))))
 
-; collapse some qsets to a single point, e.g. orgs whose validators only ever appear as the same org in other qsets (and whose threshold is > 1/2)
+;; collapse some qsets to a single point, e.g. orgs whose validators only ever appear as the same org in other qsets (and whose threshold is > 1/2)
 ; NOTE marginal utility... inner qsets are small
+; TODO tests
 (define (collapse-qsets network)
   ; (define sym-gen (make-sym-gen))
   (define sym-gen (make-caching-proc (λ (_) (gensym "flattened-qset"))))
@@ -615,6 +631,7 @@
     (flat-closure (seteqv 1 3) network-1)
     (seteqv 1 2 3)))
 
+;; direct graph where there is an edge from p to q when q appears in p's quorumset
 (define (network-to-graph net)
   (define edges
     (for*/list ([p (network-members net)]
