@@ -4,15 +4,7 @@
   graph ; for computing strongly connected components
   syntax/parse/define
   sugar ; for caching procedures
-  qi
-  #;racket/trace
-  #;racket/pretty
-  #;sugar/debug)
-
-; TODO projection onto a set
-; TODO intersection check and quorum check when all orgs can be collapsed and all validators have qset that's a threshold of orgs (easy in that case...). Also easy to compute resilience bounds. Even whether the network is "resilient".
-; TODO good-case check: find maximal scc, check closure is whole network; find maximal clique of intertwined members of the scc (with heuristic); if not the whole scc, check closure of the clique is the whole network; if failure we can try another clique (we expect to have a big maximal clique that should be easy to hit).
-; TODO non-intersection good case? If closure of scc is not whole set, can we find a quorum in its complement? Not necessarily. We can if it is a quorum. A pair of nodes may fail the cheap intertwinedness check; then we do a more thourough direct intertwinedness check (essentially enumerating their slices). Any other easy cases?
+  )
 
 ;; Definition
 ;; ==========
@@ -826,7 +818,7 @@
       (values rejected (set-add clique p))
       (values (set-add rejected p) clique))))
 
-;; our main quorum-intersection check
+;; our main fast and incomplete quorum-intersection check
 (define (fbas-intertwined?/incomplete fbas)
   (define mscc ; max strongly-connected component, as a set
     (apply set (max-scc (fbas-to-graph fbas))))
@@ -848,3 +840,10 @@
       "./stellarbeat.data"
       (thunk (deserialize (read)))))
   (fbas-intertwined?/incomplete stellar-fbas))
+
+; TODO when the heuristic fails we could nevertheless simplify the problem further to the pass it to the SAT-based checker
+; for example, any two points that are known intertwined can be "fused" into one single point
+
+; TODO compute failure bounds heuristically?
+
+; TODO compute heuristically whether fbas is resilient; e.g. for every two pairs we can compute a max number of failures; similarly for each point we can compute the min number of points that can block it, then take the min over all nodes as liveness bound

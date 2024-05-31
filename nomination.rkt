@@ -11,7 +11,7 @@
 
 ; weight in a qset
 
-; This is how core computes weights, but it's not how it's defined in the
+; This is (hopefully) how core computes weights, but it's not exactly how it's defined in the
 ; whitepaper (see tests)
 
 ; NOTE the sum of the node's weights can be bigger than 1, but individual

@@ -5,7 +5,7 @@
 (require rosette/lib/synthax
          syntax/parse/define
          "truth-tables.rkt"
-         "tvl-verification.rkt"
+         "3vl-verification.rkt"
          (for-syntax
            racket/syntax
            syntax/to-string))
@@ -169,18 +169,18 @@
 
 (verify-is-true (my-eq-1 p q)
     (eq?
-      (designated-value {p ∧ q})
-      (and (designated-value p) (designated-value q))))
+      (designated-value? {p ∧ q})
+      (and (designated-value? p) (designated-value? q))))
 
 (verify-is-true (my-eq-2 p q)
     (eq?
-      (designated-value {p ⇒ q})
-      (=> (designated-value p) (designated-value q))))
+      (designated-value? {p ⇒ q})
+      (=> (designated-value? p) (designated-value? q))))
 
 (verify-is-true (my-eq-3 a p q)
     (eq?
-      (designated-value {a ⇒ {p ∧ q}})
-      (and (designated-value {a ⇒ p}) (designated-value {a ⇒ q}))))
+      (designated-value? {a ⇒ {p ∧ q}})
+      (and (designated-value? {a ⇒ p}) (designated-value? {a ⇒ q}))))
 
 ;; Now we check whether we can construct ⊃ from ⇒ and other modalities using an expression of fixed maximum depth
 

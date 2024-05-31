@@ -7,5 +7,6 @@ Important files
 * `rosette-sat.rkt` uses Rosette to obtain a 3vl solver by symbolically executing the 3vl truth tables, and a propositional solver that just forwards formulas to Z3 (no symbolic execution involved)
 * `stellarbeat.rkt` provides procedure to download Stellar's current network configuration from https://stellarbeat.io
 * `intersection-checker.rkt` ties everything together to obtain and provides a command-line interface
+* `book-tests.rkt` and `tvl-verification.rkt` contain tests for the 3vl logic
 
 In practice, I suspect that the fast check defined in `qset.rkt` will be sufficient.

@@ -111,7 +111,7 @@
   [(_ (f:id arg ...))
    #'(let ()
        (define (g arg ...)
-         (designated-value (f arg ...)))
+         (designated-value? (f arg ...)))
        (verify-with-tvl-args (g arg ...)))])
 
 (module+ test

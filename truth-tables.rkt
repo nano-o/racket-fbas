@@ -316,7 +316,7 @@
       (stream-lazy (explore-stream f (stream-rest s))))
     (stream)))
 
-; TODO why do we need this when we have always-#t? streams are very slow anyway
+; TODO why do we need this when we have for-3values*/and? streams are very slow anyway
 (define (interpretations vars)
   ; creates a lazy stream of all possible interpretations of the variables
   (define (cases v inter)
