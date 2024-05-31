@@ -27,6 +27,7 @@
         qset?)]
     [flatten-qsets (-> stellar-fbas/c stellar-fbas/c)]
     [collapse-qsets (-> stellar-fbas/c stellar-fbas/c)])
+  quorum?
   invert-qset-map
   nodes-without-qset
   add-missing-qsets
@@ -37,15 +38,14 @@
 (module+ test
   (require rackunit))
 
-; we have a set of nodes, also called points
-
-; a node is something for which eqv? is semantic equivalence, i.e. symbols, numbers, and characters.
+;; we have a set of nodes, also called points
+;; a node is something for which eqv? is semantic equivalence, i.e. symbols, numbers, and characters.
+;; we're using eqv? for performance reasons, which is probably misguided...
 (define node/c
   (or/c symbol? number? char?))
 
 ; validators must be a seteqv
 ; inner-qsets must be a set
-; TODO why not just an assoc list?
 (struct qset (threshold validators inner-qsets) #:prefab) ; prefab to simplify serialization/deserialization
 ; note that this is an immutable struct so we cannot construct circular ones
 
@@ -119,8 +119,44 @@
 ;; returns the set of elements (validators and inner qsets) of q
 (define (qset-elements q)
   (set-union
-    (apply set (set->list (qset-validators q))) ; just because qset-validators is a seteqv...
+    (apply set (set->list (qset-validators q))) ; transform the seteqv into a set
     (qset-inner-qsets q)))
+
+;; one way to see a quorumset is as encoding agreement requirements
+;; e.g. a node n with quorumset (qset 2 (seteqv 'a 'b 'c) (set)) requires agreement from 2 nodes out of 'a, 'b, and 'c
+;; In general, we can determine whether a set P satisfies the requirements of the qset q as follows:
+(define (sat? q P)
+  ; first we (recursively) compute how many of q's elements are satisfied
+  (define t
+    (for/fold
+      ([n 0])
+      ([e (qset-elements q)])
+      (cond
+        ; if e is a node and it's in P, then it's counted as satisfied:
+        [(and (node/c e) (set-member? P e))
+         (+ n 1)]
+        ; if e is a qset and P satisfies it, then it's counted as satisfied:
+        [(and (qset? e) (sat? e P))
+         (+ n 1)]
+        [else n])))
+  ; then we check if more than the threshold are satisfied
+  (>= t (qset-threshold q)))
+
+(module+ test
+  (check-true (sat? qset-1 (set 1 2)))
+  (check-false (sat? qset-1 (set 1)))
+  (check-true (sat? qset-5 (set 1 2 'x 'z)))
+  (check-true (sat? qset-6 (set 'A 'x 'z)))
+  (check-false (sat? qset-6 (set 'A 'a 'y))))
+
+;; (loose) definition
+;; ==================
+;; a federated Byzantine agreement system (FBAS) is a set of nodes (also called points) each of which has a quorumset (or, alternatively, a set of slices)
+
+;; a quorum is a set that satisfies the requirements of all its members
+(define (quorum? fbas Q)
+  (for/and ([n Q])
+    (sat? (dict-ref fbas n) Q)))
 
 (module+ test
   (check-equal?
@@ -302,7 +338,7 @@
       #:validators
       #:inner-qsets (qset 2 (seteqv 1 2) (set)) (qset 2 (seteqv 2 3) (set)))))
 
-;; recursively apply f until a fixpoint is reached, starting with (f v)
+;; utility function: recursively apply f until a fixpoint is reached, starting with (f v)
 (define (fixpoint f v)
   (if (equal? (f v) v)
     v
