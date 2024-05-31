@@ -679,8 +679,7 @@
 ;; checks whether every two slices of qsets q1 and q2 intersect
 ;; heuristic that is sound (i.e. if it returns true, then the qsets are intertwined) but not complete
 ;; results are cached (NOTE the cache uses `equal?`)
-;; TODO make caching proc only when needed
-(define/caching (intertwined?/incomplete q1 q2)
+(define (intertwined?/incomplete q1 q2)
   (define t1 (qset-threshold q1))
   (define n1 (set-count (qset-elements q1)))
   (define t2 (qset-threshold q2))
@@ -961,4 +960,63 @@
      (check-false ; 2 out of 3
        (resiliently-intertwined/incomplete q2 q2))))
 
+(define (failure-bound q1 q2)
+  (define t1 (qset-threshold q1))
+  (define n1 (set-count (qset-elements q1)))
+  (define t2 (qset-threshold q2))
+  (define n2 (set-count (qset-elements q2)))
+  (define inter ; elements that the two qsets have in common
+    (set-intersect
+        (qset-elements q1) (qset-elements q2)))
+  (define ni ; number of elements that the two qsets have in common
+    (set-count inter))
+  (define m1 (- (+ t1 ni) n1)) ; worst-case number of common points used by party 1
+  (define m2 (- (+ t2 ni) n2)) ; worst-case number of common points used by party 2
+  (define inner-qsets-okay
+    (for/and ([e inter])
+      ; common inner qsets must be flat and have a threshold of more than half
+      (or
+        (not (qset? e))
+        (and
+          (set-empty? (qset-inner-qsets e))
+          (> (* 2 (qset-threshold e)) (set-count (qset-validators e)))))))
+  ; TODO: incorrect for inner qsets (we need to count their members)
+  (if inner-qsets-okay
+    (- (+ m1 m2) ni 1)
+    0))
+
+(module+ test
+  (check-equal?
+    (failure-bound
+      (qset 3 (seteqv 'a 'b 'c 'd) (set))
+      (qset 3 (seteqv 'a 'b 'c 'd) (set)))
+    1)
+  (check-equal?
+    (failure-bound
+      (qset 2 (seteqv 'a 'b 'c 'd) (set))
+      (qset 3 (seteqv 'a 'b 'c 'd) (set)))
+    0)
+  (check-equal?
+    (failure-bound
+      (qset 5 (seteqv 'a 'b 'c 'd 'e 'f 'g) (set))
+      (qset 5 (seteqv 'a 'b 'c 'd 'e 'f 'g) (set)))
+    2)
+  (check-equal?
+    (failure-bound
+      (qset 5 (seteqv 'a 'b 'c 'd 'e 'f) (set))
+      (qset 3 (seteqv 'a 'b 'c 'd) (set)))
+    1)
+  (local
+    [(define o1 (qset 2 (seteqv 'o11 'o12 'o13) (set)))
+     (define o2 (qset 2 (seteqv 'o21 'o22 'o23) (set)))
+     (define o3 (qset 2 (seteqv 'o31 'o32 'o33) (set)))
+     (define o4 (qset 2 (seteqv 'o41 'o42 'o43) (set)))
+     (define q1 (qset 3 (seteqv) (set o1 o2 o3 o4)))
+     (define q2 (qset 1 (seteqv) (set o1 o2 o3)))]
+    (check-equal? ; 3 out of 4
+      (failure-bound q1 q1)
+      'TODO)
+    (check-false ; 2 out of 3
+      (failure-bound q2 q2)
+      'TODO)))
 ; TODO compute failure bounds heuristically
