@@ -980,7 +980,7 @@
         (and
           (set-empty? (qset-inner-qsets e))
           (> (* 2 (qset-threshold e)) (set-count (qset-validators e)))))))
-  ; TODO: incorrect for inner qsets (we need to count their members)
+  ; NOTE: this is a number of qset elements (so e.g. orgs)
   (if inner-qsets-okay
     (- (+ m1 m2) ni 1)
     0))
@@ -1015,8 +1015,6 @@
      (define q2 (qset 1 (seteqv) (set o1 o2 o3)))]
     (check-equal? ; 3 out of 4
       (failure-bound q1 q1)
-      'TODO)
-    (check-false ; 2 out of 3
-      (failure-bound q2 q2)
-      'TODO)))
-; TODO compute failure bounds heuristically
+      1)
+    (check-true ; 2 out of 3
+      (<= (failure-bound q2 q2) 0))))
