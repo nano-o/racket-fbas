@@ -679,6 +679,7 @@
 ;; checks whether every two slices of qsets q1 and q2 intersect
 ;; heuristic that is sound (i.e. if it returns true, then the qsets are intertwined) but not complete
 ;; results are cached (NOTE the cache uses `equal?`)
+;; TODO make caching proc only when needed
 (define/caching (intertwined?/incomplete q1 q2)
   (define inter ; elements that the two qsets have in common
     (set-intersect
@@ -879,6 +880,56 @@
 
 ; TODO when the heuristic fails we could nevertheless simplify the problem further to the pass it to the SAT-based checker
 ; for example, any two points that are known intertwined can be "fused" into one single point
+
+;; q1 and q2 are resiliently-intertwined when they are still intertwined after failures that satisfy both their assumptions
+;; we assume that, for each inner quorumset, if one member fails maliciously then all do
+(define (resiliently-intertwined/incomplete q1 q2)
+  (define ni ; elements that the two qsets have in common
+    (set-count
+      (set-intersect
+        (qset-validators q1) (qset-validators q2))))
+  (define t1 (qset-threshold q1))
+  (define n1 (set-count (qset-validators q1)))
+  (define t2 (qset-threshold q2))
+  (define n2 (set-count (qset-validators q2)))
+  (define m1 (- (+ t1 ni) n1))
+  (define m2 (- (+ t2 ni) n2))
+  (>
+    (- (+ m1 m2) ni)
+    (min (- ni m1) (- ni m2))))
+
+(module+ test
+  ; traditional BFT quorum systems:
+  (check-true ; 3 out of 4 (1 tolerated failure)
+    (resiliently-intertwined/incomplete
+      (qset 3 (seteqv 'a 'b 'c 'd) (set))
+      (qset 3 (seteqv 'a 'b 'c 'd) (set))))
+  (check-true ; 4 out of 5 (1 tolerated failure)
+    (resiliently-intertwined/incomplete
+      (qset 4 (seteqv 'a 'b 'c 'd 'e) (set))
+      (qset 4 (seteqv 'a 'b 'c 'd 'e) (set))))
+  (check-true ; 5 out of 7 (2 tolerated failures)
+    (resiliently-intertwined/incomplete
+      (qset 5 (seteqv 'a 'b 'c 'd 'e 'f 'g) (set))
+      (qset 5 (seteqv 'a 'b 'c 'd 'e 'f 'g) (set))))
+  ; that also works:
+  (check-true
+    (resiliently-intertwined/incomplete
+      (qset 2 (seteqv 'a 'b 'c 'd) (set))
+      (qset 4 (seteqv 'a 'b 'c 'd) (set))))
+  ; non-resilient cases:
+  (check-false ; 2 out of 3 (split-brain when the lone intersection lies)
+    (resiliently-intertwined/incomplete
+      (qset 2 (seteqv 'a 'b 'c) (set))
+      (qset 2 (seteqv 'a 'b 'c) (set))))
+  (check-false ; 4 out of 7
+    (resiliently-intertwined/incomplete
+      (qset 4 (seteqv 'a 'b 'c 'd 'e 'f 'g) (set))
+      (qset 4 (seteqv 'a 'b 'c 'd 'e 'f 'g) (set))))
+  (check-false ; a non-symmetric case:
+    (resiliently-intertwined/incomplete
+      (qset 3 (seteqv 'a 'b 'c 'd) (set))
+      (qset 2 (seteqv 'a 'b 'c 'd) (set)))))
 
 ; TODO compute failure bounds heuristically?
 
