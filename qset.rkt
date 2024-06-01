@@ -23,6 +23,9 @@
         qset?)]
     [flatten-qsets (-> stellar-fbas/c stellar-fbas/c)]
     [collapse-qsets (-> stellar-fbas/c stellar-fbas/c)])
+  qset-elements
+  qset-members
+  qset-member?
   quorum?
   invert-qset-map
   nodes-without-qset
@@ -119,6 +122,15 @@
   (set-union
     (apply set (set->list (qset-validators q))) ; transform the seteqv into a set
     (qset-inner-qsets q)))
+
+; tests whether p appears anywhere in the qset:
+(define (qset-member? qs p)
+  (define in-inner-qsets
+    (for/or ([q (qset-inner-qsets qs)])
+      (qset-member? q p)))
+  (define in-validators
+    (and (member p (qset-validators qs)) #t))
+  (or in-inner-qsets in-validators))
 
 ;; one way to see a quorumset is as encoding agreement requirements
 ;; e.g. a node n with quorumset (qset 2 (seteqv 'a 'b 'c) (set)) requires agreement from 2 nodes out of 'a, 'b, and 'c
@@ -964,7 +976,8 @@
      (check-false ; 2 out of 3
        (resiliently-intertwined/incomplete q2 q2))))
 
-;; the number of (malicious) failures it takes to separate q1 and q2
+;; computes a bound b such that at least b failures can occur without dis-intertwining q1 and q2
+;; not guaranteed to be the best bound
 (define (failure-bound q1 q2)
   (define t1 (qset-threshold q1))
   (define n1 (set-count (qset-elements q1)))
@@ -987,9 +1000,11 @@
           (> (* 2 (qset-threshold e)) (set-count (qset-validators e)))))))
   ; NOTE: this is a number of qset elements (so e.g. orgs)
   (if inner-qsets-okay
-    (- (+ m1 m2) ni)
+    (- (+ m1 m2) ni 1)
     0))
 
+;; computes a bound b such that no number b of failures can dis-intertwine the fbas
+;; this is only a lower bound (i.e. it could be that more failures can be tolerated)
 (define (fbas-failure-bound fbas)
   (define mscc (max-fbas-scc fbas))
   (for*/fold ([bound (set-count mscc)])
@@ -998,7 +1013,7 @@
     (define q1 (dict-ref fbas p1))
     (define q2 (dict-ref fbas p2))
     (define b (failure-bound q1 q2))
-    (when (and (<= b 0) (> bound 0))
+    #;(when (and (<= b 0) (> bound 0))
       (pretty-print (cons q1 q2)))
     (min b bound)))
 

@@ -8,9 +8,7 @@
   (only-in sugar ->string))
 
 (provide
-  characteristic-fmla
-  extremal-characteristic-fmla
-  qset-characteristic-fmla)
+  characteristic-fmla)
 
 (define (characteristic-fmla fbas [points-to-check (dict-keys fbas)])
   ; fbas maps points to sets of slices
@@ -36,8 +34,9 @@
            (cax p polarity))))
   `(⇒ ,closedAx (≡* ,@(for/list ([p points-to-check]) (dict-ref symbols-map p)))))
 
-; TODO: factor common stuff
-; TODO: benchmark against non extremal fmla? -> seems counterproductive to increase the size of the formula
+;; generate a formula corresponding to extremal valuations (see the book)
+;; the drawback is that it produces a much bigger formula
+;; TODO factor out common stuff
 (define (extremal-characteristic-fmla fbas [points-to-check (dict-keys fbas)])
   ; fbas maps points to sets of slices
   (define points (dict-keys fbas))
@@ -74,7 +73,7 @@
            (cax-ex p polarity))))
   `(⇒ (∧ ,closedAx ,closedAx-ex) (≡* ,@(for/list ([p points-to-check]) (dict-ref symbols-map p)))))
 
-; TODO provide a set of points to check are intertwined; this might not be all points e.g. if some are deemed faulty
+;; takes a qset fbas instead of a slices fbas
 (define (qset-characteristic-fmla fbas)
   (define points-to-check (dict-keys fbas))
   ; first flatten the fbas
@@ -114,9 +113,7 @@
     racket/pretty
     (only-in "qset.rkt" quorums->slices-fbas)
     (only-in "rosette-sat.rkt" valid/3? SAT?)
-    (only-in "3to2.rkt" t-or-b?)
-    (only-in rosette sat? unsat?)
-    #;(only-in "truth-tables.rkt" for-3values*/and))
+    (only-in rosette sat? unsat?))
 
   (define qset-fbas-1
     `((p . ,(qset 1 (seteqv 'q) (set)))
@@ -143,7 +140,7 @@
   ; now let's try fbass specified by sets of quorums
 
   (define (solve-fbas n)
-    (valid/3? (extremal-characteristic-fmla n)))
+    (valid/3? (characteristic-fmla n)))
   (define slices-fbas-1
     (quorums->slices-fbas (set (set 'p 'q))))
   (check-true

@@ -1,2 +1,2 @@
 #lang info
-(define scribblings '(("manual.scrbl" ())))
+(define deps (list "graph" "sugar" "rosette"))
