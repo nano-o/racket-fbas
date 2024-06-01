@@ -1,6 +1,10 @@
-Important files
+# racket-fbas
 
-* `qset.rkt` defines quorumsets, slices, network configurations, etc. and functions to manipulate them, as well as a fast, incomplete quorum-intersection check.
+This repository contains a bunch of Racket code related to checking quorum-intersection and related properties in a federated byzantine agreement system
+
+## Description of some of the files
+
+* `qset.rkt` defines quorumsets, slices, network configurations, etc. and functions to manipulate them, as well as a fast, incomplete quorum-intersection check and a conservative but quick to compute safety bound.
 * `truth-tables.rkt` defines the truth tables of the 3-valued logic that we call 3vl.
 * `characteristic-fmla.rkt` defines a procedure that takes a network configuration (mapping each node to its slices) and produces a formula in 3vl that is valid if and only if quorum-intersection holds.
 * `3to2.rkt` defines a translation from 3vl to standard propositional logic.
