@@ -6,10 +6,6 @@
   sugar ; for caching procedures
   )
 
-;; Definition
-;; ==========
-;; Two points (or nodes) p1 and p2 are intertwined when, if Q1 is a quorum of p1 and Q2 is a quorum of p2, then Q1 and Q2 intersect
-
 (provide
   (contract-out
     [node/c contract?]
@@ -33,7 +29,9 @@
   add-missing-qsets
   qset-fbas->slices-fbas
   fbas-intertwined?/incomplete
-  quorums->slices-fbas)
+  quorums->slices-fbas
+  resilient/incomplete
+  fbas-failure-bound)
 
 (module+ test
   (require rackunit))
@@ -857,13 +855,12 @@
       (values rejected (set-add clique p))
       (values (set-add rejected p) clique))))
 
+(define (max-fbas-scc fbas)
+  (apply set (max-scc (fbas-to-graph fbas))))
+
 ;; our main fast and incomplete quorum-intersection check
 (define (fbas-intertwined?/incomplete fbas)
-  (define mscc ; max strongly-connected component, as a set
-    (apply set (max-scc (fbas-to-graph fbas))))
-  (cond
-    [(shows-intertwined mscc fbas) #t]
-    [else #f]))
+  (shows-intertwined (max-fbas-scc fbas) fbas))
 
 (module+ test
   (define fbas-1
@@ -909,6 +906,13 @@
         (and
           (set-empty? (qset-inner-qsets e))
           (> (* 2 (qset-threshold e)) (set-count (qset-validators e))))))))
+
+(define (resilient/incomplete fbas)
+  (define mscc (max-fbas-scc fbas))
+  (for*/and ([p1 mscc] [p2 mscc])
+    (resiliently-intertwined/incomplete
+      (dict-ref fbas p1)
+      (dict-ref fbas p2))))
 
 (module+ test
   ; traditional BFT quorum systems:
@@ -960,6 +964,7 @@
      (check-false ; 2 out of 3
        (resiliently-intertwined/incomplete q2 q2))))
 
+;; the number of (malicious) failures it takes to separate q1 and q2
 (define (failure-bound q1 q2)
   (define t1 (qset-threshold q1))
   (define n1 (set-count (qset-elements q1)))
@@ -982,8 +987,20 @@
           (> (* 2 (qset-threshold e)) (set-count (qset-validators e)))))))
   ; NOTE: this is a number of qset elements (so e.g. orgs)
   (if inner-qsets-okay
-    (- (+ m1 m2) ni 1)
+    (- (+ m1 m2) ni)
     0))
+
+(define (fbas-failure-bound fbas)
+  (define mscc (max-fbas-scc fbas))
+  (for*/fold ([bound (set-count mscc)])
+             ([p1 mscc]
+              [p2 mscc])
+    (define q1 (dict-ref fbas p1))
+    (define q2 (dict-ref fbas p2))
+    (define b (failure-bound q1 q2))
+    (when (and (<= b 0) (> bound 0))
+      (pretty-print (cons q1 q2)))
+    (min b bound)))
 
 (module+ test
   (check-equal?

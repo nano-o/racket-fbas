@@ -10,7 +10,9 @@
   (only-in "qset.rkt"
            fbas-intertwined?/incomplete
            flatten-qsets
-           qset-fbas->slices-fbas)
+           qset-fbas->slices-fbas
+           resilient/incomplete
+           fbas-failure-bound)
   racket/cmdline)
 
 (provide
@@ -47,6 +49,10 @@
                    (method ((curry check-intertwined/sat) valid/3?))]
       [("--fast") "use incomplete heuristic and fall-back on 3to2"
                   (method (λ (fbas) (or (fbas-intertwined?/incomplete fbas) (check-intertwined/sat check-valid-using-3to2 fbas))))]
+      [("--resilient") "check if fbas is resilient"
+                       (method resilient/incomplete)]
+      [("--safety-bound") "compute safety bound of max scc"
+                       (method fbas-failure-bound)]
       #:args ([filename #f]) filename))
 
   (if file

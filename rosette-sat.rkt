@@ -8,6 +8,7 @@
 (provide
   valid/3?
   interpret/3
+  bv-to-3
   SAT?)
 
 ;; We provide a validity checker for tvl formulas.
