@@ -1,5 +1,8 @@
 #lang racket
 
+;; quorumsets and operations on them
+;; for practical purposes in stellar-core or for stellarbeat, the most important functions are fbas-intertwined?/incomplete and fbas-failure-bound.
+
 (require
   graph ; for computing strongly connected components
   syntax/parse/define
@@ -149,7 +152,7 @@
         [(and (qset? e) (sat? e P))
          (+ n 1)]
         [else n])))
-  ; then we check if more than the threshold are satisfied
+  ; then we check whether qset-threshold or more are satisfied
   (>= t (qset-threshold q)))
 
 (module+ test
@@ -162,6 +165,13 @@
 ;; (loose) definition
 ;; ==================
 ;; a federated Byzantine agreement system (FBAS) is a set of nodes (also called points) each of which has a quorumset (or, alternatively, a set of slices)
+(define (no-orphans? fbas)
+  (set-empty? (nodes-without-qset fbas)))
+
+(define stellar-fbas/c
+  (and/c
+    (listof (cons/c node/c qset/c)) ; association list; why not hash?
+    no-orphans?))
 
 ;; a quorum is a set that satisfies the requirements of all its members
 (define (quorum? fbas Q)
@@ -481,14 +491,6 @@
     (fbas-members fbas)
     (apply seteqv (dict-keys fbas))))
 
-(define (no-orphans? fbas)
-  (set-empty? (nodes-without-qset fbas)))
-
-(define stellar-fbas/c
-  (and/c
-    (listof (cons/c node/c qset/c)) ; TODO association list; why not hash?
-    no-orphans?))
-
 (module+ test
   (check-false
     (stellar-fbas/c `((p . ,qset-1)))))
@@ -685,6 +687,9 @@
                 #:when (set-member? (qset-members (dict-ref net p)) q))
       (list p q)))
   (unweighted-graph/directed edges))
+
+;; Next we will provide procedures to approximately check (variants of) intertwinedness or compute failure bounds.
+;; The general idea for tractable approximation is to check whether qsets requirements "intersecgt" (and not quorum intersection). If the qsets of nodes p1 and p2 "intersect", then p1 and p2's quorums intersect. However if the qsets of p1 and p2 do not intersect, then it's still not clear whether their quorums intersect or not.
 
 ;; checks whether every two slices of qsets q1 and q2 intersect
 ;; heuristic that is sound (i.e. if it returns true, then the qsets are intertwined) but not complete

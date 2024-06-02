@@ -12,9 +12,10 @@
   t-or-b?
   equiv-fmlas?)
 
- ; given a tvl formula, generates a boolean formula that is valid if and only if the original tvl formula is valid
+;; given a tvl formula, generates a boolean formula that is valid if and only if the original tvl formula is valid
 
-; The idea is that, for each sub-formula f, we create two boolean variables f- and f+ that encode the tvl truth value of the formula (i.e. 10 is 'f, 00 and 11 are 'b, and 01 is 't). Then we follow the truth tables to express the truth value of a formula in terms of the truth value of its subformulas.
+;; The idea is that, for each sub-formula f, we create two boolean variables f- and f+ that encode the tvl truth value of the formula (i.e. 10 is 'f, 00 and 11 are 'b, and 01 is 't). Then we follow the truth tables to express the truth value of a formula in terms of the truth value of its subformulas.
+;; This transformation is much faster than symbolically executing the 3vl interpreter with Rosette.
 
 ; We encode 3vl values as pairs of booleans
 (define (is-f p) ; f is 10
@@ -56,8 +57,8 @@
       (match fmla
         [(? ((curryr member) truth-values)) (set ((is-tv fmla) f-+))]
         [(? symbol?) (set)] ; symbol that's not a 3vl truth value; no constraint in that case
-        [`(∧*) (set (is-t f-+))]
-        [`(∨*) (set (is-f f-+))]
+        [`(∧*) (set (is-t f-+))] ; empty conjunction
+        [`(∨*) (set (is-f f-+))] ; empty disjunction
         [`(,uop ,subf) ; unary operation
           (match-define `(,subf-+ ,sub-constraints) (3to2 subf))
           (define new-constraint
@@ -66,7 +67,7 @@
                 `(&& ,((is-tv v) subf-+) ,((is-tv ((eval-truth-table uop) v)) f-+)))))
           (set-add sub-constraints new-constraint)]
         ; We do something a bit ad-hoc for the * operations
-        ; This improves performance a lot compared to first rewriting the big ops
+        ; This improves performance a lot compared to first rewriting the big ops away
         [`(∧* ,subf ...)
           (match-define `((,subf-+ ,sub-constraints) ...) (map 3to2 subf))
           (define one-f
