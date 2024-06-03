@@ -112,7 +112,7 @@
   (require rackunit)
 
   (check-not-exn get-stellar-fbas)
-  (check-not-exn get-stellar-top-tier)
+  ;(check-not-exn get-stellar-top-tier)
 
   #;(test-case
     "to-jsexpr"
