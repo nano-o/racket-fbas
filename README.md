@@ -20,7 +20,7 @@ In practice, I suspect that the fast check defined in `qset.rkt` will be suffici
 
 ## Running
 
-* After installing racket, close this repository and run `raco pkg install` in it.
+* After installing racket, clone this repository and run `raco pkg install` in it.
 * To run test: `ls *.rkt | xargs -I{} raco test -x {}`
 * To check that the stellar network intertwined using the fast heuristic (with fallback to SAT): `racket intersection-checker.rkt --fast`
 * Same check on a synthetic, asymmetric network with 16 orgs: `racket intersection-checker.rkt --fast test-data/almost_symmetric_network_16_orgs_delete_prob_factor_2.json`
