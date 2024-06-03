@@ -21,8 +21,8 @@ In practice, I suspect that the fast check defined in `qset.rkt` will be suffici
 ## Running
 
 * After installing racket, clone this repository and run `raco pkg install` in it.
-* To run test: `ls *.rkt | xargs -I{} raco test -x {}`
+* To run test: `raco test .`
 * To check that the stellar network intertwined using the fast heuristic (with fallback to SAT): `racket intersection-checker.rkt --fast`
 * Same check on a synthetic, asymmetric network with 16 orgs: `racket intersection-checker.rkt --fast test-data/almost_symmetric_network_16_orgs_delete_prob_factor_2.json`
 * This one triggers the SAT fallback: `racket intersection-checker.rkt --fast test-data/almost_symmetric_network_16_orgs_delete_prob_factor_15.json` (it's a sparse network where intersection does not hold).
-* To get a lower bound on the number of failures that the Stellar network can tolerate while remaining safe: `racket intersection-checker.rkt --safety-bound`
+* To get a lower bound on the number of (malicious org) failures that the Stellar network can tolerate while remaining safe: `racket intersection-checker.rkt --safety-bound`
