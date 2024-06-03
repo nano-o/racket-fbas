@@ -1,2 +1,2 @@
 #lang info
-(define deps (list "graph" "sugar" "rosette"))
+(define deps (list "graph-lib" "sugar" "rosette" "rackunit" "sweet-exp-lib" "base"))
