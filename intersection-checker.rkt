@@ -38,7 +38,7 @@
 
 (module+ main
 
-  (define method (make-parameter check-valid-using-3to2))
+  (define method (make-parameter ((curry check-intertwined/sat) check-valid-using-3to2)))
 
   (define file
     (command-line
