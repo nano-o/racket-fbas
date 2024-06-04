@@ -2,7 +2,8 @@
 
 This repository contains a bunch of Racket code related to checking quorum-intersection and related properties in a federated byzantine agreement system.
 What's important is mostly in `qset.rkt`.
-The reduction to SAT is interesting but what's in `qset.rkt` should cover most cases.
+
+For the theory behind this code, see Parts I and III of the [book draft](https://arxiv.org/abs/2402.03253) on semitopololgy.
 
 ## Description of some of the files
 
@@ -15,8 +16,6 @@ The reduction to SAT is interesting but what's in `qset.rkt` should cover most c
 * `intersection-checker.rkt` ties everything together to provide a command-line interface
 * `3vl-tests.rkt` contain tests for the 3vl logic
 * `test-data/` contains some synthetic networks to try stuff on
-
-In practice, I suspect that the fast check defined in `qset.rkt` will be sufficient.
 
 ## Running
 

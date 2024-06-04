@@ -1008,7 +1008,7 @@
     (- (+ m1 m2) ni 1)
     0))
 
-;; computes a bound b such that no number b of failures can dis-intertwine the fbas
+;; computes a bound b such that no number b of failures can dis-intertwine the maximal strongly connected component of the fbas (if there is more than one max-scc, the analysis will be done on a maximal scc of maximal cardinality)
 ;; this is only a lower bound (i.e. it could be that more failures can be tolerated)
 (define (fbas-failure-bound fbas)
   (define mscc (max-fbas-scc fbas))
