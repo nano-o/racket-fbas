@@ -19,7 +19,7 @@ For the theory behind this code, see Parts I and III of the [book draft](https:/
 
 ## Running
 
-* After installing racket, clone this repository and run `raco pkg install` in it.
+* After [installing Racket](https://download.racket-lang.org/), clone this repository and run `raco pkg install` in it.
 * To run test: `raco test .`
 * To check that the stellar network intertwined using the fast heuristic (with fallback to SAT): `racket intersection-checker.rkt --fast`
 * Same check on a synthetic, asymmetric network with 16 orgs: `racket intersection-checker.rkt --fast test-data/almost_symmetric_network_16_orgs_delete_prob_factor_2.json`
