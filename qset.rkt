@@ -139,21 +139,15 @@
 ;; e.g. a node n with quorumset (qset 2 (seteqv 'a 'b 'c) (set)) requires agreement from 2 nodes out of 'a, 'b, and 'c
 ;; In general, we can determine whether a set P satisfies the requirements of the qset q as follows:
 (define (sat? q P)
-  ; first we (recursively) compute how many of q's elements are satisfied
-  (define t
-    (for/fold
-      ([n 0])
-      ([e (qset-elements q)])
-      (cond
-        ; if e is a node and it's in P, then it's counted as satisfied:
-        [(and (node/c e) (set-member? P e))
-         (+ n 1)]
-        ; if e is a qset and P satisfies it, then it's counted as satisfied:
-        [(and (qset? e) (sat? e P))
-         (+ n 1)]
-        [else n])))
-  ; then we check whether qset-threshold or more are satisfied
-  (>= t (qset-threshold q)))
+  (cond
+    [(node/c q) (set-member? P q)]
+    [(qset? q)
+     (define sat-elements
+       (for/list ([e (qset-elements q)]
+                  #:when (sat? e P))
+         e))
+     (>= (length sat-elements) (qset-threshold q))]
+    [else #f]))
 
 (module+ test
   (check-true (sat? qset-1 (set 1 2)))
